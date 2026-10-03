@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -50,8 +51,30 @@ func CheckAnthropicKey(ctx context.Context, key string, opts ...option.RequestOp
 	return err
 }
 
+// effortModels accept the effort setting: every Claude 5 model, Opus 4.5 and
+// later, and Sonnet 4.6. Others (Haiku 4.5, older Sonnets) reject it with a
+// 400, so it's left out for them.
+var effortModels = []string{
+	"claude-fable-", "claude-mythos-", "claude-opus-5", "claude-sonnet-5",
+	"claude-opus-4-5", "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8", "claude-sonnet-4-6",
+}
+
+// fallbackModels support server-side refusal fallbacks in their "default"
+// form, which picks a fallback model by refusal category.
+var fallbackModels = []string{"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+
+func hasPrefix(model string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(model, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // JSON sends req with structured output enabled, so the response text is
-// JSON that matches req.Schema. Server-side fallbacks are on: if a safety
+// JSON that matches req.Schema. On models that support them, it also sets
+// the effort level and turns on server-side fallbacks: if a safety
 // classifier declines the request, the API re-serves it on a fallback model
 // within the same call instead of failing.
 func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
@@ -59,7 +82,7 @@ func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 	if maxTokens == 0 {
 		maxTokens = 16000
 	}
-	msg, err := a.client.Beta.Messages.New(ctx, anthropic.BetaMessageNewParams{
+	params := anthropic.BetaMessageNewParams{
 		Model:     anthropic.Model(a.model),
 		MaxTokens: maxTokens,
 		System: []anthropic.BetaTextBlockParam{{
@@ -70,12 +93,23 @@ func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 			anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(req.Prompt)),
 		},
 		OutputConfig: anthropic.BetaOutputConfigParam{
-			Effort: a.effort,
 			Format: anthropic.BetaJSONOutputFormatParam{Schema: req.Schema},
 		},
-		Fallbacks: anthropic.BetaFallbacksParamUnion{OfDefault: constant.ValueOf[constant.Default]()},
-		Betas:     []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01},
-	})
+	}
+	if hasPrefix(a.model, effortModels) {
+		params.OutputConfig.Effort = a.effort
+	}
+	if hasPrefix(a.model, fallbackModels) {
+		params.Fallbacks = anthropic.BetaFallbacksParamUnion{OfDefault: constant.ValueOf[constant.Default]()}
+		params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
+	}
+	msg, err := a.client.Beta.Messages.New(ctx, params)
+	// effortModels can be wrong about a model; if one rejects effort, try
+	// once more without it rather than failing the run.
+	if err != nil && params.OutputConfig.Effort != "" && strings.Contains(err.Error(), "does not support the effort parameter") {
+		params.OutputConfig.Effort = ""
+		msg, err = a.client.Beta.Messages.New(ctx, params)
+	}
 	if err != nil {
 		return nil, err
 	}

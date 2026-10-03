@@ -88,6 +88,73 @@ func TestAnthropicStopReasons(t *testing.T) {
 	}
 }
 
+func TestModelCapabilities(t *testing.T) {
+	var bodies []map[string]any
+	var betas []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var got map[string]any
+		data, _ := io.ReadAll(r.Body)
+		json.Unmarshal(data, &got)
+		bodies = append(bodies, got)
+		betas = append(betas, r.Header.Get("Anthropic-Beta"))
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, okResponse)
+	}))
+	defer srv.Close()
+	req := Request{Prompt: "x", Schema: map[string]any{"type": "object"}}
+	opts := []option.RequestOption{option.WithBaseURL(srv.URL), option.WithAPIKey("test"), option.WithMaxRetries(0)}
+
+	for _, tt := range []struct {
+		model            string
+		effort, fallback bool
+	}{
+		{"claude-haiku-4-5", false, false},
+		{"claude-sonnet-4-5", false, false},
+		{"claude-sonnet-4-6", true, false},
+		{"claude-sonnet-5-5", true, true},
+		{"claude-opus-5-5", true, true},
+	} {
+		bodies, betas = nil, nil
+		if _, err := NewAnthropic(tt.model, "high", opts...).JSON(context.Background(), req); err != nil {
+			t.Fatalf("%s: %v", tt.model, err)
+		}
+		oc, _ := bodies[0]["output_config"].(map[string]any)
+		_, hasEffort := oc["effort"]
+		_, hasFallbacks := bodies[0]["fallbacks"]
+		if hasEffort != tt.effort || hasFallbacks != tt.fallback || strings.Contains(betas[0], "server-side-fallback") != tt.fallback {
+			t.Errorf("%s: effort=%v fallbacks=%v beta=%q", tt.model, hasEffort, hasFallbacks, betas[0])
+		}
+		if oc["format"] == nil {
+			t.Errorf("%s: structured output missing", tt.model)
+		}
+	}
+}
+
+func TestRetriesWithoutEffort(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var got map[string]any
+		data, _ := io.ReadAll(r.Body)
+		json.Unmarshal(data, &got)
+		w.Header().Set("Content-Type", "application/json")
+		if oc, _ := got["output_config"].(map[string]any); oc["effort"] != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"This model does not support the effort parameter."}}`)
+			return
+		}
+		io.WriteString(w, okResponse)
+	}))
+	defer srv.Close()
+	c := NewAnthropic("claude-opus-5-5", "high", option.WithBaseURL(srv.URL), option.WithAPIKey("test"), option.WithMaxRetries(0))
+	if _, err := c.JSON(context.Background(), Request{Prompt: "x", Schema: map[string]any{"type": "object"}}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
 func TestCheckAnthropicKey(t *testing.T) {
 	status := http.StatusOK
 	var gotKey string
