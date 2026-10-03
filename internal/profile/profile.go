@@ -20,6 +20,20 @@ type Profile struct {
 	Certifications     []Certification     `json:"certifications,omitempty"`
 	CoverLetterStories []Story             `json:"cover_letter_stories,omitempty"`
 	Preferences        Preferences         `json:"preferences,omitempty"`
+	LearnedFacts       []LearnedFact       `json:"learned_facts,omitempty"`
+}
+
+// LearnedFact is the candidate's answer to a question rezgen asked while
+// tailoring an application. Saving it means later runs don't ask again and
+// can cite it like any other profile entry.
+type LearnedFact struct {
+	ID       string `json:"id"`
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+	// Learned is the date it was saved, as YYYY-MM-DD.
+	Learned string `json:"learned,omitempty"`
+	// Context names the posting that prompted the question.
+	Context string `json:"context,omitempty"`
 }
 
 type Contact struct {

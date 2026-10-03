@@ -150,5 +150,8 @@ func (p *Profile) check() []Problem {
 	for i, s := range p.CoverLetterStories {
 		claim(s.ID, fmt.Sprintf("/cover_letter_stories/%d/id", i))
 	}
+	for i, f := range p.LearnedFacts {
+		claim(f.ID, fmt.Sprintf("/learned_facts/%d/id", i))
+	}
 	return probs
 }

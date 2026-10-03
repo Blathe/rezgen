@@ -1,0 +1,37 @@
+{
+  "headline": "AI Solutions Engineer",
+  "summary": {
+    "text": "Engineer with 8 years of internal tools and integrations who ships LLM automations non-technical teams use every day.",
+    "sources": ["fact-1", "fact-2"]
+  },
+  "experience": [
+    {
+      "id": "acme",
+      "bullets": [
+        {"text": "Built a Claude-based triage service that routes 1,200 support tickets a week, cutting first-response time 40%.", "sources": ["acme-ticket-triage"]},
+        {"text": "Automated invoice data entry with document extraction and a human review queue, saving 30 hours a week.", "sources": ["acme-invoice-extract"]}
+      ]
+    },
+    {
+      "id": "brightpath",
+      "bullets": [
+        {"text": "Rebuilt the clinic scheduling integration between the EHR and the patient portal.", "sources": ["brightpath-scheduling"]}
+      ]
+    }
+  ],
+  "projects": [
+    {"id": "rezgen", "text": "Go CLI that tailors resumes to job postings with the Claude API."}
+  ],
+  "skills": [
+    {"group": "AI", "items": ["Claude API", "prompt engineering", "tool use"]},
+    {"group": "Languages", "items": ["Python", "Go", "SQL"]}
+  ],
+  "cover_letter": {
+    "greeting": "Dear Northwind Freight hiring team,",
+    "paragraphs": [
+      {"text": "Most of my best work started as a conversation with someone in operations.", "sources": ["why-solutions"]},
+      {"text": "At Acme Logistics I built a Claude-based triage service that routes 1,200 tickets a week.", "sources": ["acme-ticket-triage"]}
+    ],
+    "closing": "Sincerely,"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["company", "role", "seniority", "must_have", "nice_to_have", "keywords", "responsibilities", "matches", "gaps", "questions"],
+  "properties": {
+    "company": {"type": "string", "description": "Hiring company name, or empty if the posting doesn't say"},
+    "role": {"type": "string", "description": "Job title as posted"},
+    "seniority": {"type": "string", "description": "e.g. junior, mid, senior, staff, lead"},
+    "must_have": {"type": "array", "items": {"type": "string"}, "description": "Required skills and qualifications"},
+    "nice_to_have": {"type": "array", "items": {"type": "string"}, "description": "Preferred or bonus qualifications"},
+    "keywords": {"type": "array", "items": {"type": "string"}, "description": "Terms an applicant tracking system is likely to match on"},
+    "responsibilities": {"type": "array", "items": {"type": "string"}},
+    "matches": {
+      "type": "array",
+      "description": "Requirements the profile already supports",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirement", "source_ids"],
+        "properties": {
+          "requirement": {"type": "string"},
+          "source_ids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "gaps": {"type": "array", "items": {"type": "string"}, "description": "Requirements the profile doesn't show evidence for"},
+    "questions": {
+      "type": "array",
+      "description": "At most 5 questions whose answers could close a gap with real facts",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "why"],
+        "properties": {
+          "id": {"type": "string", "description": "Short kebab-case id, e.g. q-kubernetes"},
+          "text": {"type": "string"},
+          "why": {"type": "string", "description": "Which requirement this answer would support"}
+        }
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 rezgen tailors a resume and cover letter to a specific job posting. It keeps everything about you in one JSON profile, reads a posting, asks a few questions, and uses the Claude API to select and reword the experience that fits. It never invents facts: every line on the page traces back to the profile or your answers.
 
-> Status: Phase 1 of 5. The profile format and `rezgen validate` work today; generation, the terminal UI and PDF export are coming next.
+> Status: Phase 2 of 5, plus PDF export. `rezgen validate` and `rezgen generate` (Markdown and PDF output) work today; the terminal UI and application tracking are coming next.
 
 ## Install
 
@@ -35,17 +35,84 @@ Write the profile as a superset of any one resume. Each highlight is a factual a
 | `education`, `certifications` | Credentials |
 | `cover_letter_stories` | Short paragraphs about motivation or notable wins |
 | `preferences` | Tone, page limit, words to avoid |
+| `learned_facts` | Your saved answers to rezgen's questions (filled in by `rezgen generate`; edit or delete freely) |
 
 The full JSON Schema lives at [`internal/profile/profile.schema.json`](internal/profile/profile.schema.json) (also printed by `rezgen schema`). Point your editor at it with a `"$schema"` key, as the example does, to get completion and inline errors.
 
 `rezgen validate` checks the schema plus rules a schema can't: every `id` is unique across the profile and no role ends before it starts.
 
+## Generate an application
+
+rezgen calls the Claude API, so it needs an API key from [console.anthropic.com](https://console.anthropic.com). Put it in a `.env` file in the folder you run rezgen from:
+
+```sh
+cp .env.example .env    # then edit .env and paste your key
+```
+
+`.env` is git-ignored. A variable already set in your shell (`export ANTHROPIC_API_KEY=...`) takes precedence over the file, and `-env path` reads a different file.
+
+Point it at the job posting's web page, or at a text file you saved it to:
+
+```sh
+rezgen generate -posting https://job-boards.greenhouse.io/acme/jobs/123
+rezgen generate -posting posting.txt
+```
+
+For a URL, rezgen uses the structured job data most job boards embed for search engines (Greenhouse, Lever, Ashby and many career sites); otherwise it takes the page's visible text without navigation, headers and footers. Some sites, such as LinkedIn and Workday, build the page with JavaScript or block automated requests. rezgen tells you when it can't find the posting, and you can paste the text into a file instead. To see exactly what rezgen extracted, without calling the API:
+
+```sh
+rezgen posting https://job-boards.greenhouse.io/acme/jobs/123
+```
+
+It runs in three steps:
+
+1. **Analyze.** Claude reads the posting against your profile and lists what the role requires, which requirements your profile already supports, and the gaps.
+2. **Ask.** If a true answer could close a gap (say, a tool you've used but never wrote down), rezgen asks you up to 5 questions in the terminal. Press Enter to skip any of them. Afterwards it offers to save your answers to the profile's `learned_facts`, so later applications use them as facts and never ask the same thing again. Only that section of `profile.json` is rewritten; the rest of the file is left exactly as you wrote it.
+3. **Write.** Claude drafts the resume and cover letter. Every bullet and paragraph cites the profile IDs or answers it came from. rezgen rejects a draft that cites an ID that doesn't exist, puts one role's highlight under another role, lists a skill that isn't in your profile, or uses one of your `avoid_words`. It asks once more with the problems listed, and if the second draft fails too it saves that draft as `draft-rejected.json` for you to inspect.
+
+Contact details, job titles, dates, education and certifications are copied straight from the profile, never retyped by the model.
+
+The result lands in `applications/<date>-<company>-<role>/`:
+
+| File | What it is |
+| --- | --- |
+| `resume.pdf`, `cover-letter.pdf` | The tailored documents, ready to upload |
+| `resume.md`, `cover-letter.md` | The same documents as Markdown, for editing |
+| `sources.md` | Every generated line next to the profile IDs it cites, for checking by hand |
+| `analysis.json`, `answers.json`, `draft.json` | The intermediate steps |
+| `posting.md` | The posting text, with its URL at the top if it came from the web |
+
+Options:
+
+| Flag | Default | |
+| --- | --- | --- |
+| `-posting` | (required) | Posting URL, text file, or `-` to read stdin (questions are skipped) |
+| `-profile` | `profile.json` | Profile to draw from |
+| `-out` | `applications` | Where application folders go |
+| `-model` | `claude-opus-5-5` | Claude model |
+| `-effort` | `high` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and cheaper |
+| `-no-questions` | off | Skip the questions |
+| `-env` | `.env` | File to load the API key from, if it exists |
+| `-no-pdf` | off | Write Markdown only |
+
+The PDFs are plain on purpose so applicant tracking systems can parse them: one column, selectable text in Helvetica, no tables or images, US Letter. If the resume runs past your profile's `max_pages`, rezgen tells you.
+
+To change the wording, edit `resume.md` or `cover-letter.md` and rebuild the PDFs:
+
+```sh
+rezgen pdf applications/2026-10-02-acme-ai-solutions-engineer/resume.md
+```
+
+Try it on the examples: `rezgen generate -profile examples/profile.example.json -posting examples/posting.example.md`.
+
+A run makes two API calls. The profile is sent as a cached system prompt, so the second call reads it from the cache. Requests use server-side fallbacks: if a safety classifier declines a request, the API retries it on a fallback model within the same call instead of failing.
+
 ## Roadmap
 
 1. **Foundation**: profile schema, loader, `rezgen validate` (done)
-2. **Headless pipeline**: posting intake, Claude analysis and writing, Markdown output, `rezgen generate`
+2. **Headless pipeline**: posting intake, Claude analysis and writing, Markdown output, `rezgen generate` (done)
 3. **TUI**: Bubble Tea screens for intake, questions, preview and revision
-4. **PDF and tracking**: ATS-friendly PDF export and a saved folder per application
+4. **PDF and tracking**: ATS-friendly PDF export (done) and tracking each application's status
 5. **Polish**: recorded-response tests, demo GIF, release binaries
 
 ## Development

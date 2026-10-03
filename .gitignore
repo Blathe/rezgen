@@ -1,4 +1,5 @@
-# Your real profile and generated applications stay local.
+# Your real profile, API key and generated applications stay local.
+.env
 /profile.json
 /applications/
 /rezgen

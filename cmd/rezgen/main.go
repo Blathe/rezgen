@@ -2,20 +2,28 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/Blathe/rezgen/internal/pdf"
+	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
 )
 
 const usage = `rezgen tailors resumes and cover letters to job postings.
 
 Usage:
-  rezgen validate [-profile path]   check a profile file
-  rezgen schema                     print the profile JSON Schema
+  rezgen validate [-profile path]                       check a profile file
+  rezgen generate -posting url|file [-profile path]     tailor a resume and cover letter
+  rezgen posting url|file                               print the posting text rezgen would send
+  rezgen pdf file.md...                                 render Markdown (e.g. an edited resume.md) to PDF
+  rezgen schema                                         print the profile JSON Schema
+
+Run "rezgen generate -h" for all generate options.
 `
 
 func main() {
@@ -30,6 +38,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "validate":
 		return validate(args[1:], stdout, stderr)
+	case "generate":
+		return generate(args[1:], stdout, stderr)
+	case "posting":
+		return showPosting(args[1:], stdout, stderr)
+	case "pdf":
+		return pdfCommand(args[1:], stdout, stderr)
 	case "schema":
 		stdout.Write(profile.Schema())
 		return 0
@@ -65,5 +79,47 @@ func validate(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "%s is valid: %d roles, %d highlights, %d projects, %d certifications\n",
 		*path, len(p.Experience), highlights, len(p.Projects), len(p.Certifications))
+	return 0
+}
+
+// pdfCommand re-renders Markdown files to PDF, for after hand edits.
+func pdfCommand(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: rezgen pdf file.md...")
+		return 2
+	}
+	code := 0
+	for _, path := range args {
+		out, pages, err := pdf.ConvertFile(path)
+		if err != nil {
+			fmt.Fprintf(stderr, "pdf %s: %v\n", path, err)
+			code = 1
+			continue
+		}
+		fmt.Fprintf(stdout, "%s (%d page%s)\n", out, pages, plural(pages))
+	}
+	return code
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// showPosting prints the text extracted from a posting, so a URL can be
+// checked before spending an API call on it.
+func showPosting(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: rezgen posting url|file")
+		return 2
+	}
+	p, err := posting.Loader{Stdin: stdin}.Load(context.Background(), args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "read posting: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, p.Text)
 	return 0
 }
