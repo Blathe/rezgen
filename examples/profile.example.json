@@ -1,0 +1,94 @@
+{
+  "$schema": "../internal/profile/profile.schema.json",
+  "schema_version": 1,
+  "contact": {
+    "name": "Jordan Example",
+    "email": "jordan@example.com",
+    "phone": "555-0100",
+    "location": "Denver, CO",
+    "links": {
+      "github": "https://github.com/example",
+      "linkedin": "https://linkedin.com/in/example"
+    }
+  },
+  "headline_variants": ["AI Solutions Engineer", "Automation Engineer"],
+  "summary_facts": [
+    "8 years building internal tools and integrations",
+    "Ships LLM automations used daily by non-technical teams"
+  ],
+  "experience": [
+    {
+      "id": "acme",
+      "company": "Acme Logistics",
+      "title": "Senior Software Engineer",
+      "location": "Remote",
+      "start": "2022-03",
+      "end": null,
+      "context": "B2B logistics SaaS, about 200 employees",
+      "highlights": [
+        {
+          "id": "acme-ticket-triage",
+          "text": "Built a Claude-based ticket triage service that routes 1,200 support tickets a week",
+          "metrics": ["cut first-response time 40%"],
+          "skills": ["Python", "Claude API", "AWS Lambda"],
+          "tags": ["llm", "automation", "customer-support"]
+        },
+        {
+          "id": "acme-invoice-extract",
+          "text": "Automated invoice data entry with document extraction and a human review queue",
+          "metrics": ["saved 30 hours a week of manual entry"],
+          "skills": ["Python", "PostgreSQL"],
+          "tags": ["automation", "finance"]
+        }
+      ]
+    },
+    {
+      "id": "brightpath",
+      "company": "BrightPath Health",
+      "title": "Software Developer",
+      "start": "2018-06",
+      "end": "2022-02",
+      "highlights": [
+        {
+          "id": "brightpath-scheduling",
+          "text": "Rebuilt the clinic scheduling integration between the EHR and the patient portal",
+          "skills": ["C#", "REST APIs"],
+          "tags": ["integration", "healthcare"]
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "rezgen",
+      "name": "rezgen",
+      "url": "https://github.com/Blathe/rezgen",
+      "text": "Terminal app that tailors resumes and cover letters to job postings with the Claude API",
+      "skills": ["Go", "Claude API", "Bubble Tea"],
+      "tags": ["llm", "cli"]
+    }
+  ],
+  "skills": {
+    "languages": ["Go", "Python", "TypeScript", "SQL"],
+    "ai": ["Claude API", "prompt engineering", "RAG", "tool use", "MCP"],
+    "platforms": ["AWS", "Docker", "Zapier"]
+  },
+  "education": [
+    {"school": "Colorado State University", "degree": "B.S.", "field": "Computer Science", "end": "2016"}
+  ],
+  "certifications": [
+    {"name": "AWS Certified Developer - Associate", "issuer": "Amazon Web Services", "date": "2024-05"}
+  ],
+  "cover_letter_stories": [
+    {
+      "id": "why-solutions",
+      "text": "I like the moment a team stops doing a tedious task by hand. Most of my best work started as a conversation with someone in operations, not a ticket.",
+      "tags": ["motivation"]
+    }
+  ],
+  "preferences": {
+    "tone": "direct, concrete",
+    "max_pages": 1,
+    "avoid_words": ["passionate", "synergy", "rockstar"]
+  }
+}

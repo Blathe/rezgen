@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Blathe/rezgen/profile.schema.json",
+  "title": "rezgen profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contact", "experience"],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+    "yearOrMonth": {"type": "string", "pattern": "^[0-9]{4}(-(0[1-9]|1[0-2]))?$"},
+    "nonEmpty": {"type": "string", "minLength": 1},
+    "strings": {"type": "array", "items": {"$ref": "#/$defs/nonEmpty"}},
+    "highlight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "text": {"$ref": "#/$defs/nonEmpty"},
+        "metrics": {"$ref": "#/$defs/strings"},
+        "skills": {"$ref": "#/$defs/strings"},
+        "tags": {"$ref": "#/$defs/strings"}
+      }
+    }
+  },
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "email"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmpty"},
+        "email": {"type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"},
+        "phone": {"type": "string"},
+        "location": {"type": "string"},
+        "links": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    },
+    "headline_variants": {"$ref": "#/$defs/strings"},
+    "summary_facts": {"$ref": "#/$defs/strings"},
+    "experience": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "company", "title", "start", "end", "highlights"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "company": {"$ref": "#/$defs/nonEmpty"},
+          "title": {"$ref": "#/$defs/nonEmpty"},
+          "location": {"type": "string"},
+          "start": {"$ref": "#/$defs/month"},
+          "end": {"oneOf": [{"$ref": "#/$defs/month"}, {"type": "null"}]},
+          "context": {"type": "string"},
+          "highlights": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/highlight"}}
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "text"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "name": {"$ref": "#/$defs/nonEmpty"},
+          "url": {"type": "string"},
+          "text": {"$ref": "#/$defs/nonEmpty"},
+          "skills": {"$ref": "#/$defs/strings"},
+          "tags": {"$ref": "#/$defs/strings"}
+        }
+      }
+    },
+    "skills": {"type": "object", "additionalProperties": {"$ref": "#/$defs/strings"}},
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["school"],
+        "properties": {
+          "school": {"$ref": "#/$defs/nonEmpty"},
+          "degree": {"type": "string"},
+          "field": {"type": "string"},
+          "end": {"$ref": "#/$defs/yearOrMonth"}
+        }
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {"$ref": "#/$defs/nonEmpty"},
+          "issuer": {"type": "string"},
+          "date": {"$ref": "#/$defs/yearOrMonth"},
+          "url": {"type": "string"}
+        }
+      }
+    },
+    "cover_letter_stories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "text": {"$ref": "#/$defs/nonEmpty"},
+          "tags": {"$ref": "#/$defs/strings"}
+        }
+      }
+    },
+    "preferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tone": {"type": "string"},
+        "max_pages": {"type": "integer", "minimum": 1, "maximum": 3},
+        "avoid_words": {"$ref": "#/$defs/strings"}
+      }
+    }
+  }
+}

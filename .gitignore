@@ -1,0 +1,5 @@
+# Your real profile and generated applications stay local.
+/profile.json
+/applications/
+/rezgen
+/rezgen.exe
