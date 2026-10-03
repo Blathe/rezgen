@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/anthropics/anthropic-sdk-go v1.78.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	golang.org/x/net v0.41.0
 	golang.org/x/text v0.27.0
 )
 

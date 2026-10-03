@@ -50,10 +50,17 @@ cp .env.example .env    # then edit .env and paste your key
 
 `.env` is git-ignored. A variable already set in your shell (`export ANTHROPIC_API_KEY=...`) takes precedence over the file, and `-env path` reads a different file.
 
-Save the job posting as a text file, then:
+Point it at the job posting's web page, or at a text file you saved it to:
 
 ```sh
+rezgen generate -posting https://job-boards.greenhouse.io/acme/jobs/123
 rezgen generate -posting posting.txt
+```
+
+For a URL, rezgen uses the structured job data most job boards embed for search engines (Greenhouse, Lever, Ashby and many career sites); otherwise it takes the page's visible text without navigation, headers and footers. Some sites, such as LinkedIn and Workday, build the page with JavaScript or block automated requests. rezgen tells you when it can't find the posting, and you can paste the text into a file instead. To see exactly what rezgen extracted, without calling the API:
+
+```sh
+rezgen posting https://job-boards.greenhouse.io/acme/jobs/123
 ```
 
 It runs in three steps:
@@ -71,13 +78,13 @@ The result lands in `applications/<date>-<company>-<role>/`:
 | `resume.md`, `cover-letter.md` | The tailored documents |
 | `sources.md` | Every generated line next to the profile IDs it cites, for checking by hand |
 | `analysis.json`, `answers.json`, `draft.json` | The intermediate steps |
-| `posting.md` | The posting as given |
+| `posting.md` | The posting text, with its URL at the top if it came from the web |
 
 Options:
 
 | Flag | Default | |
 | --- | --- | --- |
-| `-posting` | (required) | Posting file, or `-` to read stdin (questions are skipped) |
+| `-posting` | (required) | Posting URL, text file, or `-` to read stdin (questions are skipped) |
 | `-profile` | `profile.json` | Profile to draw from |
 | `-out` | `applications` | Where application folders go |
 | `-model` | `claude-opus-5-5` | Claude model |

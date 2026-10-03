@@ -2,21 +2,24 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
 )
 
 const usage = `rezgen tailors resumes and cover letters to job postings.
 
 Usage:
-  rezgen validate [-profile path]                  check a profile file
-  rezgen generate -posting file [-profile path]    tailor a resume and cover letter
-  rezgen schema                                    print the profile JSON Schema
+  rezgen validate [-profile path]                       check a profile file
+  rezgen generate -posting url|file [-profile path]     tailor a resume and cover letter
+  rezgen posting url|file                               print the posting text rezgen would send
+  rezgen schema                                         print the profile JSON Schema
 
 Run "rezgen generate -h" for all generate options.
 `
@@ -35,6 +38,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return validate(args[1:], stdout, stderr)
 	case "generate":
 		return generate(args[1:], stdout, stderr)
+	case "posting":
+		return showPosting(args[1:], stdout, stderr)
 	case "schema":
 		stdout.Write(profile.Schema())
 		return 0
@@ -70,5 +75,21 @@ func validate(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "%s is valid: %d roles, %d highlights, %d projects, %d certifications\n",
 		*path, len(p.Experience), highlights, len(p.Projects), len(p.Certifications))
+	return 0
+}
+
+// showPosting prints the text extracted from a posting, so a URL can be
+// checked before spending an API call on it.
+func showPosting(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: rezgen posting url|file")
+		return 2
+	}
+	p, err := posting.Loader{Stdin: stdin}.Load(context.Background(), args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "read posting: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, p.Text)
 	return 0
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/Blathe/rezgen/internal/dotenv"
 	"github.com/Blathe/rezgen/internal/llm"
+	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
 	"github.com/Blathe/rezgen/internal/tailor"
 )
@@ -32,7 +33,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	profilePath := fs.String("profile", "profile.json", "path to the profile file")
-	postingPath := fs.String("posting", "", "path to the job posting text, or - to read stdin (required)")
+	postingPath := fs.String("posting", "", "job posting: a URL, a text file, or - to read stdin (required)")
 	outDir := fs.String("out", "applications", "folder to save the application in")
 	model := fs.String("model", llm.DefaultModel, "Claude model to use")
 	effort := fs.String("effort", "high", "effort level: low, medium, high, xhigh or max")
@@ -42,7 +43,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *postingPath == "" {
-		fmt.Fprintln(stderr, "generate: -posting is required (a file path, or - for stdin)")
+		fmt.Fprintln(stderr, "generate: -posting is required (a URL, a file path, or - for stdin)")
 		return 2
 	}
 	if err := dotenv.Load(*envFile); err != nil {
@@ -55,14 +56,18 @@ func generate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: %v\n", *profilePath, err)
 		return 1
 	}
-	posting, err := readPosting(*postingPath)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if posting.IsURL(*postingPath) {
+		fmt.Fprintf(stderr, "Fetching %s...\n", *postingPath)
+	}
+	post, err := posting.Loader{Stdin: stdin}.Load(ctx, *postingPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "read posting: %v\n", err)
 		return 1
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 
 	t, err := tailor.New(newClient(*model, *effort), p)
 	if err != nil {
@@ -71,7 +76,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stderr, "Analyzing the posting...")
-	a, err := t.Analyze(ctx, posting)
+	a, err := t.Analyze(ctx, post.Text)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -91,8 +96,8 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stderr, "Writing the resume and cover letter...")
-	app := tailor.Application{Posting: posting, Analysis: a, Answers: answers}
-	d, err := t.Write(ctx, posting, a, answers)
+	app := tailor.Application{Posting: post.Text, PostingSource: post.Source, Analysis: a, Answers: answers}
+	d, err := t.Write(ctx, post.Text, a, answers)
 	var de *tailor.DraftError
 	switch {
 	case errors.As(err, &de):
@@ -123,26 +128,6 @@ func generate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "  %s\n", filepath.Join(dir, f))
 	}
 	return 0
-}
-
-func readPosting(path string) (string, error) {
-	var (
-		data []byte
-		err  error
-	)
-	if path == "-" {
-		data, err = io.ReadAll(stdin)
-	} else {
-		data, err = os.ReadFile(path)
-	}
-	if err != nil {
-		return "", err
-	}
-	s := strings.TrimSpace(string(data))
-	if s == "" {
-		return "", errors.New("posting is empty")
-	}
-	return s, nil
 }
 
 // ask puts each question to the candidate and returns the non-empty answers.

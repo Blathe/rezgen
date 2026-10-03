@@ -15,10 +15,13 @@ import (
 
 // Application is everything produced for one posting.
 type Application struct {
-	Posting  string
-	Analysis *Analysis
-	Answers  []Answer
-	Draft    *Draft
+	Posting string
+	// PostingSource is where the posting came from: a URL, file path or
+	// "stdin". A URL is recorded at the top of posting.md.
+	PostingSource string
+	Analysis      *Analysis
+	Answers       []Answer
+	Draft         *Draft
 }
 
 // Save writes app into a new folder under root named
@@ -29,7 +32,11 @@ func Save(root string, p *profile.Profile, app Application, on time.Time) (strin
 	if err != nil {
 		return "", err
 	}
-	files := map[string]string{"posting.md": app.Posting}
+	posting := app.Posting + "\n"
+	if strings.HasPrefix(app.PostingSource, "http://") || strings.HasPrefix(app.PostingSource, "https://") {
+		posting = "Source: " + app.PostingSource + "\n\n" + posting
+	}
+	files := map[string]string{"posting.md": posting}
 	if app.Analysis != nil {
 		files["analysis.json"] = toJSON(app.Analysis)
 	}

@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,6 +114,34 @@ func TestGenerateSavesRejectedDraft(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "fact-99") {
 		t.Errorf("unexpected rejected draft:\n%s", data)
+	}
+}
+
+func TestGenerateFromURL(t *testing.T) {
+	body := "<html><body><nav>Jobs</nav><main><h1>AI Solutions Engineer</h1><p>" +
+		strings.Repeat("Northwind Freight builds LLM automations for operations. ", 10) +
+		"</p></main></body></html>"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	fake := useFake(t, "", analysisFixture, draftFixture)
+	out := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "-profile", exampleProfile, "-posting", srv.URL + "/jobs/1", "-out", out, "-no-questions"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
+	}
+	if p := fake.Requests[0].Prompt; !strings.Contains(p, "<posting>\nAI Solutions Engineer\n\nNorthwind Freight builds") || strings.Contains(p, "Jobs") {
+		t.Errorf("page text not extracted cleanly:\n%s", p)
+	}
+	saved, err := os.ReadFile(filepath.Join(out, "2026-10-02-northwind-freight-ai-solutions-engineer", "posting.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(saved), "Source: "+srv.URL+"/jobs/1\n\n") {
+		t.Errorf("posting.md doesn't record the URL:\n%s", saved)
 	}
 }
 
