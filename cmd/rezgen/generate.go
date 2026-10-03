@@ -9,17 +9,15 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/Blathe/rezgen/internal/dotenv"
 	"github.com/Blathe/rezgen/internal/llm"
-	"github.com/Blathe/rezgen/internal/pdf"
 	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/store"
 	"github.com/Blathe/rezgen/internal/tailor"
-	"github.com/Blathe/rezgen/internal/track"
 )
 
 // These are variables so tests can swap in a fake model, canned input and a
@@ -118,60 +116,34 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	if source == "stdin" {
 		source = ""
 	}
-	app, cerr := track.Create(*outDir, a.Name(), post.Text, source, now())
-	if cerr == nil {
-		cerr = tailor.WriteResults(app, p, tailor.Results{Analysis: a, Answers: answers, Draft: d}, now())
+	st := store.New(*outDir)
+	app, err := st.Create(a.Name(), post.Text, source, now())
+	if err == nil {
+		err = st.SetResults(app, store.Results{Analysis: a, Answers: answers, Draft: d, Rejected: de}, now())
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "save: %v\n", err)
+		return 1
 	}
 	if de != nil {
-		if cerr == nil {
-			cerr = tailor.SaveRejected(app.Dir, de)
-		}
-		fmt.Fprintln(stderr, err)
-		if cerr != nil {
-			fmt.Fprintf(stderr, "also failed to save: %v\n", cerr)
-		} else {
-			fmt.Fprintf(stderr, "The analysis and the rejected draft are in %s\n", app.Dir)
-		}
+		fmt.Fprintln(stderr, de)
+		fmt.Fprintf(stderr, "Saved the application as %s without documents; open it in rezgen to try again.\n", app.Name)
 		return 1
 	}
-	if cerr != nil {
-		fmt.Fprintf(stderr, "save: %v\n", cerr)
+	if *noPDF {
+		fmt.Fprintf(stdout, "Saved %s (no PDFs, -no-pdf)\n", app.Name)
+		return 0
+	}
+	pages, err := st.Export(app, p)
+	if err != nil {
+		fmt.Fprintf(stderr, "export: %v\n", err)
 		return 1
 	}
-	dir := app.Dir
-	code := 0
-	if !*noPDF {
-		code = writePDFs(stderr, p.Preferences.MaxPages, filepath.Join(dir, "resume.md"), filepath.Join(dir, "cover-letter.md"))
+	fmt.Fprintf(stdout, "Saved to %s\n  %s\n  %s\n", st.DocsDir(app), st.ResumePDF(app), st.CoverLetterPDF(app))
+	if max := p.Preferences.MaxPages; max > 0 && pages > max {
+		fmt.Fprintf(stderr, "Note: the resume is %d pages; your profile asks for %d. Open it in rezgen and press e to trim it.\n", pages, max)
 	}
-	fmt.Fprintf(stdout, "Saved to %s\n", dir)
-	files := []string{"resume.md", "cover-letter.md", "sources.md"}
-	if !*noPDF {
-		files = []string{"resume.pdf", "cover-letter.pdf", "resume.md", "cover-letter.md", "sources.md"}
-	}
-	for _, f := range files {
-		fmt.Fprintf(stdout, "  %s\n", filepath.Join(dir, f))
-	}
-	return code
-}
-
-// writePDFs renders each Markdown file to a PDF beside it. maxPages, if set,
-// is the resume page limit from the profile; a resume over it gets a
-// warning, not a failure, since it can be trimmed by editing the Markdown.
-func writePDFs(stderr io.Writer, maxPages int, paths ...string) int {
-	code := 0
-	for _, path := range paths {
-		out, pages, err := pdf.ConvertFile(path)
-		if err != nil {
-			fmt.Fprintf(stderr, "pdf %s: %v\n", path, err)
-			code = 1
-			continue
-		}
-		if maxPages > 0 && pages > maxPages && strings.HasPrefix(filepath.Base(path), "resume") {
-			fmt.Fprintf(stderr, "Note: %s is %d pages; your profile asks for %d. Trim resume.md and run: rezgen pdf %s\n",
-				out, pages, maxPages, path)
-		}
-	}
-	return code
+	return 0
 }
 
 // ask puts each question to the candidate and returns the non-empty answers.

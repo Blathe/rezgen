@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/Blathe/rezgen/internal/track"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 // list prints every application and whether its documents exist yet.
@@ -19,10 +19,16 @@ func list(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	defaults(nil, root, nil)
-	apps, err := track.List(*root)
+	st := store.New(*root)
+	apps, err := st.List()
 	if err != nil {
 		fmt.Fprintln(stderr, err)
-		return 1
+		if len(apps) == 0 {
+			return 1
+		}
+	}
+	if legacy, _ := st.FindLegacy(); len(legacy) > 0 {
+		fmt.Fprintf(stderr, "%s from an older version aren't listed; open rezgen to convert them.\n\n", countNoun(len(legacy), "application"))
 	}
 	if len(apps) == 0 {
 		fmt.Fprintf(stdout, "No applications in %s yet.\n", *root)
@@ -30,12 +36,14 @@ func list(args []string, stdout, stderr io.Writer) int {
 	}
 	generated := 0
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "STATUS\tCREATED\tNAME\tFOLDER")
+	fmt.Fprintln(tw, "STATUS\tCREATED\tNAME\tDOCUMENTS")
 	for _, a := range apps {
-		if a.Status == track.Generated {
+		docs := "-"
+		if a.Status() == store.Generated {
 			generated++
+			docs = st.DocsDir(a)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Status, track.Age(a.Created, now()), clip(a.Name, 50), a.Folder())
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Status(), store.Age(a.Created, now()), clip(a.Name, 50), docs)
 	}
 	tw.Flush()
 	fmt.Fprintf(stdout, "\n%s: %d generated, %d not started\n", countNoun(len(apps), "application"), generated, len(apps)-generated)

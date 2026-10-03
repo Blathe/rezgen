@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Blathe/rezgen/internal/llm/llmtest"
 	"github.com/Blathe/rezgen/internal/profile"
-	"github.com/Blathe/rezgen/internal/track"
 )
 
 func loadProfile(t *testing.T) *profile.Profile {
@@ -216,36 +214,16 @@ func TestRender(t *testing.T) {
 	}
 }
 
-func TestWriteResults(t *testing.T) {
-	p := loadProfile(t)
-	on := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
-	app, err := track.Create(t.TempDir(), "Northwind", "posting text", "", on)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := &Analysis{Company: "Northwind Freight", Role: "AI Solutions Engineer"}
-
-	// A rejected draft saves the analysis but leaves the application not started.
-	if err := WriteResults(app, p, Results{Analysis: a}, on); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := track.Load(app.Dir); got.Status != track.NotStarted || !got.Has("analysis.json") {
-		t.Errorf("after rejected draft: %+v", got.Record)
-	}
-
-	if err := WriteResults(app, p, Results{Analysis: a, Draft: goodDraft(t)}, on); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range []string{"posting.md", "analysis.json", "draft.json", "resume.md", "cover-letter.md", "sources.md", "application.json"} {
-		if _, err := os.Stat(filepath.Join(app.Dir, f)); err != nil {
-			t.Errorf("missing %s", f)
+func TestAnalysisName(t *testing.T) {
+	for _, tt := range []struct{ company, role, want string }{
+		{"Northwind Freight", "AI Solutions Engineer", "Northwind Freight - AI Solutions Engineer"},
+		{"Northwind Freight", "", "Northwind Freight"},
+		{"", "AI Solutions Engineer", "AI Solutions Engineer"},
+		{"", "", "Application"},
+	} {
+		a := Analysis{Company: tt.company, Role: tt.role}
+		if got := a.Name(); got != tt.want {
+			t.Errorf("Name() = %q, want %q", got, tt.want)
 		}
-	}
-	got, _ := track.Load(app.Dir)
-	if got.Status != track.Generated || got.Company != "Northwind Freight" || got.Name != "Northwind" {
-		t.Errorf("after generation: %+v", got.Record)
-	}
-	if a.Name() != "Northwind Freight - AI Solutions Engineer" || (&Analysis{}).Name() != "Application" {
-		t.Errorf("Name() = %q", a.Name())
 	}
 }

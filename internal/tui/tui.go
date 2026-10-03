@@ -11,10 +11,12 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -28,8 +30,8 @@ import (
 	"github.com/Blathe/rezgen/internal/llm"
 	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/store"
 	"github.com/Blathe/rezgen/internal/tailor"
-	"github.com/Blathe/rezgen/internal/track"
 )
 
 // Config holds what the app needs from the command line. Everything else
@@ -110,12 +112,13 @@ type Model struct {
 	flash         string
 	flashErr      bool
 
-	setup   setupState
-	initCmd tea.Cmd
+	setup       setupState
+	initCmd     tea.Cmd
+	legacyAsked bool // whether this session has offered to convert old folders
 
-	apps   []*track.App
+	apps   []*store.Application
 	cursor int
-	app    *track.App // the application being viewed
+	app    *store.Application // the application being viewed
 
 	textIn  textinput.Model
 	area    textarea.Model
@@ -292,30 +295,36 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Messages from background work.
 type (
 	appsMsg struct {
-		apps      []*track.App
-		err       error
-		selectDir string
+		apps     []*store.Application
+		legacy   []string // folders from an older version to convert
+		err      error
+		selectID string
 	}
 	openedMsg struct{ err error }
 )
 
-func (m Model) loadApps(selectDir string) tea.Cmd {
-	root := m.appsDir()
+func (m Model) store() *store.Store { return store.New(m.appsDir()) }
+
+func (m Model) loadApps(selectID string) tea.Cmd {
+	st := m.store()
 	return func() tea.Msg {
-		apps, err := track.List(root)
-		return appsMsg{apps: apps, err: err, selectDir: selectDir}
+		apps, err := st.List()
+		legacy, lerr := st.FindLegacy()
+		if err == nil {
+			err = lerr
+		}
+		return appsMsg{apps: apps, legacy: legacy, err: err, selectID: selectID}
 	}
 }
 
 func (m Model) gotApps(msg appsMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		m.setFlash(msg.err.Error(), true)
-		return m, nil
 	}
 	m.apps = msg.apps
-	if msg.selectDir != "" {
+	if msg.selectID != "" {
 		for i, a := range m.apps {
-			if a.Dir == msg.selectDir {
+			if a.ID == msg.selectID {
 				m.cursor = i
 			}
 		}
@@ -324,12 +333,41 @@ func (m Model) gotApps(msg appsMsg) (tea.Model, tea.Cmd) {
 	// Keep the open application's record current.
 	if m.app != nil {
 		for _, a := range m.apps {
-			if a.Dir == m.app.Dir {
+			if a.ID == m.app.ID {
 				m.app = a
 			}
 		}
 	}
+	if len(msg.legacy) > 0 && !m.legacyAsked && m.screen == scrHome {
+		m.legacyAsked = true
+		return m.askConvert(msg.legacy)
+	}
 	return m, nil
+}
+
+// askConvert offers to move applications from an older version into the
+// store, leaving only their PDFs in their folders.
+func (m Model) askConvert(dirs []string) (tea.Model, tea.Cmd) {
+	prompt := fmt.Sprintf("Found %s from an earlier version of rezgen.\n\n"+
+		"Convert them? Each folder will keep only resume.pdf and cover-letter.pdf (built first if missing);\n"+
+		"the posting and everything else rezgen needs moves into its records. Your documents don't change.",
+		bold.Render(plural(len(dirs), "application")))
+	return m.ask(prompt, func(m Model) (tea.Model, tea.Cmd) {
+		p, _ := m.loadProfile() // without a profile, missing PDFs just aren't built
+		st := m.store()
+		var failed []string
+		for _, d := range dirs {
+			if _, err := st.Import(d, p, true); err != nil {
+				failed = append(failed, filepath.Base(d)+": "+err.Error())
+			}
+		}
+		if len(failed) > 0 {
+			m.setFlash("Some couldn't be converted: "+strings.Join(failed, "; "), true)
+		} else {
+			m.setFlash(fmt.Sprintf("Converted %s.", plural(len(dirs), "application")), false)
+		}
+		return m, m.loadApps("")
+	})
 }
 
 func (m Model) open(path string) tea.Cmd {

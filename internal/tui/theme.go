@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/Blathe/rezgen/internal/track"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 // Colors adapt to light and dark terminal backgrounds.
@@ -53,15 +53,15 @@ func pill(text string, c lipgloss.TerminalColor) string {
 }
 
 // statusPill shows an application's status with an icon.
-func statusPill(s track.Status) string {
-	if s == track.Generated {
+func statusPill(s store.Status) string {
+	if s == store.Generated {
 		return pill("● generated", okColor)
 	}
 	return pill("○ not started", mutedColor)
 }
 
-func statusStyle(s track.Status) lipgloss.Style {
-	if s == track.Generated {
+func statusStyle(s store.Status) lipgloss.Style {
+	if s == store.Generated {
 		return okStyle
 	}
 	return faint

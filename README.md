@@ -49,10 +49,10 @@ When it's done the application shows **generated**, with clickable links to the 
 | Key | Does |
 | --- | --- |
 | `o` / `c` | Open the resume / cover letter PDF |
-| `e` / `l` | Edit the resume / cover letter Markdown in your editor, then rebuild the PDF |
+| `e` / `l` | Edit the resume / cover letter in your editor; the PDF is rebuilt when you close it |
 | `v` | Show where each generated line came from |
-| `g` | Regenerate (the current documents move to `v1/`, `v2/`, ...) |
-| `t` / `p` / `f` | View the saved posting / open its link / open the folder |
+| `g` | Regenerate (replaces the current documents) |
+| `t` / `p` / `f` | View the saved posting / open its link / open the documents folder |
 | `d` | Delete the application |
 | `esc` | Back to the list (also cancels a running request) |
 
@@ -85,7 +85,7 @@ Everything the app does is also available as subcommands, for scripting. They us
 rezgen generate -posting https://job-boards.greenhouse.io/acme/jobs/123
 rezgen generate -posting posting.txt -no-questions
 rezgen posting <url>          # show the text rezgen extracts from a page, without calling the API
-rezgen pdf path/to/resume.md  # rebuild a PDF after editing the Markdown
+rezgen pdf path/to/file.md    # turn any Markdown file into a PDF in the same style
 rezgen list                   # list applications
 rezgen validate               # check the profile
 rezgen ui -model claude-sonnet-5-5   # open the app with one-off overrides
@@ -93,17 +93,22 @@ rezgen ui -model claude-sonnet-5-5   # open the app with one-off overrides
 
 `generate` takes `-profile`, `-out`, `-model`, `-effort` (`low` to `max`), `-no-questions`, `-no-pdf` and `-env`. For links, rezgen uses the structured job data most boards embed (Greenhouse, Lever, Ashby and many career sites) and otherwise the page's visible text. Sites that build pages with JavaScript or block automated requests, such as LinkedIn and Workday, get a clear error: paste the text instead.
 
-Each application is a folder named `<date>-<name>`:
+## Where things are kept
 
-| File | What it is |
-| --- | --- |
-| `posting.md` | The posting text, with its link at the top if it came from the web |
-| `application.json` | Name, company, role and status |
-| `resume.pdf`, `cover-letter.pdf` | The tailored documents |
-| `resume.md`, `cover-letter.md` | The same documents as Markdown, for editing |
-| `sources.md` | Every generated line next to the profile entries it cites |
-| `analysis.json`, `answers.json`, `draft.json` | The intermediate steps |
-| `v1/`, `v2/`, ... | Earlier generations |
+```
+Documents/rezgen/
+  profile.json
+  applications/
+    2026-10-03-142530-acme-automation-engineer/
+      resume.pdf
+      cover-letter.pdf
+  .state/
+    2026-10-03-142530-acme-automation-engineer.json
+```
+
+Each application's folder holds only its two PDFs. Everything else rezgen needs (the saved posting, the analysis, the generated draft, your answers and any hand edits) is in one JSON file per application under `.state/`, named with the time it was created so names never collide. You don't need to open it; files are written safely (to a temporary file, then renamed), so a crash can't corrupt them.
+
+Applications made by earlier versions kept all of this inside their folders. The app offers to convert them on launch: each folder is left with just its PDFs (built first if missing), and your documents stay exactly as they were.
 
 ## Roadmap
 

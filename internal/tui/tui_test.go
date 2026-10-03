@@ -16,7 +16,7 @@ import (
 	"github.com/Blathe/rezgen/internal/llm"
 	"github.com/Blathe/rezgen/internal/llm/llmtest"
 	"github.com/Blathe/rezgen/internal/profile"
-	"github.com/Blathe/rezgen/internal/track"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 var testNow = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
@@ -142,7 +142,7 @@ func TestSetupWithImport(t *testing.T) {
 	h0 := t.TempDir()
 	os.WriteFile(filepath.Join(h0, ".env"), []byte("ANTHROPIC_API_KEY=sk-ant-from-env-file-1234\n"), 0o600)
 	copyExample(t, filepath.Join(h0, "profile.json"))
-	old, _ := track.Create(filepath.Join(h0, "applications"), "Northwind", "posting", "", testNow)
+	old := legacyFolder(t, filepath.Join(h0, "applications"), "2026-10-02-northwind")
 
 	h := &harness{t: t, fake: &llmtest.Fake{}, dataDir: filepath.Join(t.TempDir(), "rezgen")}
 	t.Setenv("REZGEN_CONFIG", filepath.Join(t.TempDir(), "config.json"))
@@ -168,8 +168,12 @@ func TestSetupWithImport(t *testing.T) {
 	h.typeText(h.dataDir)
 	h.key(tea.KeyEnter)
 
+	// The imported folder is in the old format, so the app offers to convert it.
+	h.wantScreen(scrConfirm)
+	h.wantView("Found 1 application from an earlier version")
+	h.typeText("y")
 	h.wantScreen(scrHome)
-	h.wantView("Settings saved. Imported profile.json; imported 1 application.", "Northwind")
+	h.wantView("Converted 1 application.", "Northwind")
 	c, err := config.Load()
 	if err != nil || c.Model != "claude-sonnet-5-5" || c.APIKey != "sk-ant-from-env-file-1234" || c.DataDir != h.dataDir {
 		t.Errorf("config: %+v, %v", c, err)
@@ -177,9 +181,43 @@ func TestSetupWithImport(t *testing.T) {
 	if !fileExists(filepath.Join(h.dataDir, "profile.json")) || !fileExists(filepath.Join(h0, "profile.json")) {
 		t.Error("profile should be copied, not moved")
 	}
-	if _, err := os.Stat(filepath.Join(h.dataDir, "applications", old.Folder())); err != nil {
-		t.Error("application not imported")
+	conv := filepath.Join(h.dataDir, "applications", filepath.Base(old))
+	entries, _ := os.ReadDir(conv)
+	if len(entries) != 2 {
+		t.Errorf("converted folder should hold only the two PDFs, has %d entries", len(entries))
 	}
+	if _, err := os.Stat(filepath.Join(old, "posting.md")); err != nil {
+		t.Error("the original folder should be left alone")
+	}
+	a, err := store.New(filepath.Join(h.dataDir, "applications")).Load(filepath.Base(old))
+	if err != nil || a.Posting != "We are hiring." || a.Status() != store.Generated {
+		t.Errorf("converted record: %+v, %v", a, err)
+	}
+}
+
+// legacyFolder writes an application folder the way older versions did.
+func legacyFolder(t *testing.T, root, name string) string {
+	t.Helper()
+	dir := filepath.Join(root, name)
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "application.json"), []byte(`{"name": "Northwind", "created": "2026-10-02"}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "posting.md"), []byte("We are hiring.\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "resume.md"), []byte("# Jordan Example\n\n- A bullet\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "cover-letter.md"), []byte("# Jordan Example\n\nDear team,\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "sources.md"), []byte("x"), 0o644)
+	return dir
+}
+
+func TestConvertDeclined(t *testing.T) {
+	h := newHarness(t, true)
+	legacyFolder(t, filepath.Join(h.dataDir, "applications"), "2026-10-02-northwind")
+	h.typeText("r")
+	h.wantScreen(scrConfirm)
+	h.typeText("n")
+	h.wantScreen(scrHome)
+	h.typeText("r") // not asked again this session
+	h.wantScreen(scrHome)
+	h.wantView("No applications yet")
 }
 
 const draftedProfile = `{
@@ -274,21 +312,23 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 
 	h.wantScreen(scrApp)
 	h.wantView("Done! Your resume and cover letter are ready.", "resume.pdf", "cover-letter.pdf", "● generated")
+	st := store.New(filepath.Join(h.dataDir, "applications"))
 	a := h.m.app
-	for _, f := range []string{"resume.pdf", "cover-letter.pdf", "resume.md", "sources.md"} {
-		if !a.Has(f) {
-			t.Errorf("missing %s", f)
-		}
+	docs, _ := os.ReadDir(st.DocsDir(a))
+	if len(docs) != 2 || !st.HasPDFs(a) {
+		t.Errorf("the documents folder should hold exactly the two PDFs, has %d entries", len(docs))
 	}
 	if p, _ := profile.Load(filepath.Join(h.dataDir, "profile.json")); len(p.LearnedFacts) != 1 {
 		t.Error("answer not saved to the profile")
 	}
-	if got, _ := track.Load(a.Dir); got.Company != "Northwind Freight" || got.Name != "Northwind - AI Solutions Engineer" {
-		t.Errorf("record: %+v", got.Record)
+	saved, err := st.Load(a.ID)
+	if err != nil || saved.Company != "Northwind Freight" || saved.Name != "Northwind - AI Solutions Engineer" ||
+		saved.Draft == nil || len(saved.Answers) != 1 || saved.Analysis == nil {
+		t.Errorf("record: %+v, %v", saved, err)
 	}
 
 	h.typeText("o")
-	if len(h.opened) != 1 || h.opened[0] != filepath.Join(a.Dir, "resume.pdf") {
+	if len(h.opened) != 1 || h.opened[0] != st.ResumePDF(a) {
 		t.Errorf("opened %v", h.opened)
 	}
 	h.typeText("v")
@@ -297,16 +337,17 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.key(tea.KeyEsc)
 	h.wantScreen(scrApp)
 
-	// Regenerate: the first version moves to v1/.
+	// Regenerate replaces the documents.
 	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json")
 	h.typeText("g")
 	h.wantScreen(scrConfirm)
+	h.wantView("This replaces the current resume and cover letter")
 	h.typeText("y")
 	h.key(tea.KeyEsc) // skip questions
 	h.wantScreen(scrApp)
-	h.wantView("Done!", "Earlier   v1")
-	if !a.Has(filepath.Join("v1", "resume.pdf")) || !a.Has("resume.pdf") {
-		t.Error("regenerating should keep the old version in v1/")
+	h.wantView("Done!")
+	if docs, _ := os.ReadDir(st.DocsDir(a)); len(docs) != 2 {
+		t.Errorf("after regenerating the folder has %d entries", len(docs))
 	}
 
 	h.key(tea.KeyEsc)
@@ -318,8 +359,11 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.typeText("y")
 	h.wantScreen(scrHome)
 	h.wantView("Deleted Northwind - AI Solutions Engineer.", "No applications yet")
-	if _, err := os.Stat(a.Dir); err == nil {
-		t.Error("folder not deleted")
+	if _, err := os.Stat(st.DocsDir(a)); err == nil {
+		t.Error("documents not deleted")
+	}
+	if apps, _ := st.List(); len(apps) != 0 {
+		t.Error("state not deleted")
 	}
 }
 
@@ -339,7 +383,8 @@ func TestAddFromLinkErrorsKeepInput(t *testing.T) {
 
 func TestGenerateFailureAndCancel(t *testing.T) {
 	h := newHarness(t, true)
-	a, _ := track.Create(filepath.Join(h.dataDir, "applications"), "Acme", "posting text", "", testNow)
+	st := store.New(filepath.Join(h.dataDir, "applications"))
+	a, _ := st.Create("Acme", "posting text", "", testNow)
 	h.typeText("r")
 	h.key(tea.KeyEnter)
 	h.wantScreen(scrApp)
@@ -359,7 +404,7 @@ func TestGenerateFailureAndCancel(t *testing.T) {
 	h.wantView("Cancelled.")
 	h.send(analyzedMsg{}) // a late result is ignored
 	h.wantScreen(scrApp)
-	if got, _ := track.Load(a.Dir); got.Status != track.NotStarted {
+	if got, _ := st.Load(a.ID); got.Status() != store.NotStarted {
 		t.Error("status changed")
 	}
 }
@@ -379,18 +424,34 @@ func TestSettingsChangeModel(t *testing.T) {
 	h.wantScreen(scrHome)
 }
 
-func TestEditRebuildsPDF(t *testing.T) {
+func TestEditSavesAndRebuildsPDF(t *testing.T) {
 	h := newHarness(t, true)
-	a, _ := track.Create(filepath.Join(h.dataDir, "applications"), "Acme", "posting", "", testNow)
-	md := filepath.Join(a.Dir, "resume.md")
-	os.WriteFile(md, []byte("# Jordan Example\n\n- Edited bullet\n"), 0o644)
+	st := store.New(filepath.Join(h.dataDir, "applications"))
+	a, _ := st.Create("Acme", "posting", "", testNow)
+	a.ResumeEdit = "# Jordan Example\n\n- Original bullet\n"
+	a.CoverLetterEdit = "# Jordan Example\n\nDear team,\n"
+	st.Save(a)
 	h.typeText("r")
 	h.key(tea.KeyEnter)
-	h.send(editedMsg{path: md})
-	h.wantView("Rebuilt resume.pdf (1 page).")
-	if !a.Has("resume.pdf") {
-		t.Error("PDF not rebuilt")
+	h.wantScreen(scrApp)
+
+	// The editor ran on a temporary file; simulate the user saving a change.
+	tmp := filepath.Join(t.TempDir(), "rezgen-resume.md")
+	os.WriteFile(tmp, []byte("# Jordan Example\n\n- Edited bullet\n"), 0o644)
+	h.send(editedMsg{kind: editResume, path: tmp, before: a.ResumeEdit})
+	h.wantView("Edit saved and PDFs rebuilt (resume: 1 page).")
+	got, _ := st.Load(a.ID)
+	if !strings.Contains(got.ResumeEdit, "Edited bullet") || !st.HasPDFs(got) {
+		t.Errorf("edit not saved or PDFs not built: %+v", got)
 	}
+	if _, err := os.Stat(tmp); err == nil {
+		t.Error("temporary file not removed")
+	}
+
+	// Closing the editor without changes saves nothing.
+	os.WriteFile(tmp, []byte("same"), 0o644)
+	h.send(editedMsg{kind: editResume, path: tmp, before: "same"})
+	h.wantView("No changes.")
 }
 
 func TestMissingProfileRunsProfileSetup(t *testing.T) {

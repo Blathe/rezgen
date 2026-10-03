@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/Blathe/rezgen/internal/track"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 // TestPreview renders screens to an HTML file for eyeballing the styling.
@@ -40,10 +40,12 @@ func TestPreview(t *testing.T) {
 	// Home with a few applications.
 	h := newHarness(t, true)
 	root := filepath.Join(h.dataDir, "applications")
-	a1, _ := track.Create(root, "Northwind Freight - AI Solutions Engineer", "posting", "https://job-boards.greenhouse.io/northwind/jobs/123", testNow)
-	track.Create(root, "Acme Corp - Automation Engineer", "posting", "", testNow.AddDate(0, 0, -2))
-	track.Create(root, "Globex - Solutions Engineer (Remote, US)", "posting", "", testNow.AddDate(0, 0, -5))
-	os.WriteFile(filepath.Join(a1.Dir, "resume.md"), []byte("x"), 0o644)
+	st := store.New(root)
+	a1, _ := st.Create("Northwind Freight - AI Solutions Engineer", "posting", "https://job-boards.greenhouse.io/northwind/jobs/123", testNow)
+	st.Create("Acme Corp - Automation Engineer", "posting", "", testNow.AddDate(0, 0, -2))
+	st.Create("Globex - Solutions Engineer (Remote, US)", "posting", "", testNow.AddDate(0, 0, -5))
+	a1.ResumeEdit = "x"
+	st.Save(a1)
 	h.typeText("r")
 	h.m.setFlash("Added Acme Corp - Automation Engineer. Open it to generate your resume and cover letter.", false)
 	snap("Home", h)

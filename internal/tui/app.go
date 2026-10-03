@@ -5,19 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Blathe/rezgen/internal/pdf"
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/store"
 	"github.com/Blathe/rezgen/internal/tailor"
-	"github.com/Blathe/rezgen/internal/track"
 )
 
-func (m Model) openApp(a *track.App) (tea.Model, tea.Cmd) {
+func (m Model) openApp(a *store.Application) (tea.Model, tea.Cmd) {
 	m.app = a
 	m.banner = nil
 	m.flash = ""
@@ -32,38 +30,29 @@ func (m Model) appKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.flash = ""
-	generated := a.Status == track.Generated
+	st := m.store()
+	generated := a.Status() == store.Generated
 	switch k.String() {
 	case "esc", "q", "left", "h", "backspace":
 		m.banner = nil
 		m.screen = scrHome
-		return m, m.loadApps(a.Dir)
+		return m, m.loadApps(a.ID)
 	case "g":
 		if generated {
-			return m.ask(fmt.Sprintf("Regenerate %s?\n\nThe current documents move to a v1, v2, ... subfolder, so nothing is lost.", bold.Render(a.Name)),
-				func(m Model) (tea.Model, tea.Cmd) {
-					if _, err := m.app.Archive(); err != nil {
-						m.setFlash(err.Error(), true)
-						return m, nil
-					}
-					return m.startGenerate()
-				})
+			prompt := fmt.Sprintf("Regenerate %s?\n\nThis replaces the current resume and cover letter", bold.Render(a.Name))
+			if a.ResumeEdit != "" || a.CoverLetterEdit != "" {
+				prompt += ", including the edits you made"
+			}
+			return m.ask(prompt+".", func(m Model) (tea.Model, tea.Cmd) { return m.startGenerate() })
 		}
 		return m.startGenerate()
 	case "t":
-		text, err := a.Posting()
-		if err != nil {
-			m.setFlash(err.Error(), true)
-			return m, nil
-		}
-		return m.showDoc("Posting: "+a.Name, text)
+		return m.showDoc("Posting: "+a.Name, a.Posting)
 	case "p":
 		if strings.HasPrefix(a.Source, "http") {
 			return m, m.open(a.Source)
 		}
-		return m, m.open(filepath.Join(a.Dir, "posting.md"))
-	case "f":
-		return m, m.open(a.Dir)
+		return m.showDoc("Posting: "+a.Name, a.Posting)
 	case "d":
 		return m.askDelete(a)
 	}
@@ -72,22 +61,44 @@ func (m Model) appKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch k.String() {
 	case "o":
-		return m, m.open(firstExisting(a.Dir, "resume.pdf", "resume.md"))
+		return m.openPDF(st.ResumePDF(a))
 	case "c":
-		return m, m.open(firstExisting(a.Dir, "cover-letter.pdf", "cover-letter.md"))
+		return m.openPDF(st.CoverLetterPDF(a))
+	case "f":
+		return m.openPDF(st.DocsDir(a))
 	case "e":
-		return m.edit(filepath.Join(a.Dir, "resume.md"))
+		return m.edit(editResume)
 	case "l":
-		return m.edit(filepath.Join(a.Dir, "cover-letter.md"))
+		return m.edit(editCoverLetter)
 	case "v":
-		data, err := os.ReadFile(filepath.Join(a.Dir, "sources.md"))
+		if a.Draft == nil {
+			m.setFlash("No sources to show: these documents were imported from an earlier version.", true)
+			return m, nil
+		}
+		text := tailor.RenderSources(a.Draft)
+		if a.ResumeEdit != "" || a.CoverLetterEdit != "" {
+			text = "Note: you've edited these documents since they were generated; this shows the generated version.\n\n" + text
+		}
+		return m.showDoc("Sources: where each line came from", text)
+	}
+	return m, nil
+}
+
+// openPDF opens a document, exporting the PDFs first if they're missing
+// (for example after a -no-pdf run, or if the files were deleted).
+func (m Model) openPDF(path string) (tea.Model, tea.Cmd) {
+	if !m.store().HasPDFs(m.app) {
+		p, err := m.loadProfile()
 		if err != nil {
 			m.setFlash(err.Error(), true)
 			return m, nil
 		}
-		return m.showDoc("Sources: where each line came from", string(data))
+		if _, err := m.store().Export(m.app, p); err != nil {
+			m.setFlash("Couldn't build the PDFs: "+err.Error(), true)
+			return m, nil
+		}
 	}
-	return m, nil
+	return m, m.open(path)
 }
 
 func (m Model) appView() (string, string) {
@@ -95,6 +106,7 @@ func (m Model) appView() (string, string) {
 	if a == nil {
 		return "", ""
 	}
+	st := m.store()
 	w := m.innerWidth()
 	var b strings.Builder
 	b.WriteString(bold.Render(clip(a.Name, w)) + "\n")
@@ -105,30 +117,41 @@ func (m Model) appView() (string, string) {
 		b.WriteString(faint.Render(clip(a.Role+a.Company, w)) + "\n")
 	}
 	b.WriteString("\n")
-	status := statusPill(a.Status)
-	if a.Status == track.Generated {
-		status += faint.Render("  on " + a.Generated)
+	status := statusPill(a.Status())
+	if a.Generated != nil {
+		status += faint.Render("  on " + a.Generated.Format("2006-01-02"))
+	}
+	if a.ResumeEdit != "" || a.CoverLetterEdit != "" {
+		status += faint.Render(", edited")
 	}
 	b.WriteString(field("Status", status) + "\n")
-	b.WriteString(field("Added", a.Created) + "\n")
+	b.WriteString(field("Added", a.Created.Format("2006-01-02")) + "\n")
 	if strings.HasPrefix(a.Source, "http") {
 		b.WriteString(field("Posting", link(a.Source, accent.Render(clip(a.Source, w-10)))) + "\n")
 	}
-	b.WriteString(field("Folder", link(fileURL(a.Dir), clipPath(a.Dir, w-10))) + "\n")
 
-	if a.Status == track.Generated {
-		var files []string
-		for _, f := range []string{"resume.pdf", "cover-letter.pdf", "resume.md", "cover-letter.md", "sources.md"} {
-			if a.Has(f) {
-				files = append(files, link(fileURL(filepath.Join(a.Dir, f)), accent.Render(f)))
+	var help string
+	if a.Status() == store.Generated {
+		dir := st.DocsDir(a)
+		b.WriteString(field("Folder", link(fileURL(dir), clipPath(dir, w-10))) + "\n")
+		if st.HasPDFs(a) {
+			files := link(fileURL(st.ResumePDF(a)), accent.Render("resume.pdf")) + "  " +
+				link(fileURL(st.CoverLetterPDF(a)), accent.Render("cover-letter.pdf"))
+			b.WriteString(field("Files", files) + "\n")
+		}
+		help = "o open resume · c open cover letter · e edit resume · l edit letter · v sources\n" +
+			"g regenerate · t view posting · f folder · d delete · esc back"
+	} else {
+		if a.Rejected != nil {
+			b.WriteString("\n" + errStyle.Render("The last draft failed the source checks:") + "\n")
+			for _, p := range a.Rejected.Problems {
+				b.WriteString(faint.Render("  • "+clip(p, w-4)) + "\n")
 			}
+			b.WriteString("\nPress " + keyCap.Render("g") + " to try again.\n")
+		} else {
+			b.WriteString("\nPress " + keyCap.Render("g") + " to generate a tailored resume and cover letter for this posting.\n")
 		}
-		if len(files) > 0 {
-			b.WriteString(field("Files", strings.Join(files, faint.Render("  "))) + "\n")
-		}
-		if versions := oldVersions(a); len(versions) > 0 {
-			b.WriteString(field("Earlier", faint.Render(strings.Join(versions, ", "))) + "\n")
-		}
+		help = "g generate · t view posting · p open posting · d delete · esc back"
 	}
 
 	if len(m.banner) > 0 {
@@ -138,79 +161,111 @@ func (m Model) appView() (string, string) {
 		}
 		b.WriteString("\n" + p.Width(w-2).Render(strings.Join(m.banner, "\n")) + "\n")
 	}
-
-	var help string
-	if a.Status == track.Generated {
-		help = "o open resume · c open cover letter · e edit resume · l edit letter · v sources\n" +
-			"g regenerate · t view posting · f folder · d delete · esc back"
-	} else {
-		if a.Has("draft-rejected.json") {
-			b.WriteString("\n" + errStyle.Render("The last attempt's draft failed the source checks; see draft-rejected.json. Press g to try again.") + "\n")
-		} else {
-			b.WriteString("\nPress " + bold.Render("g") + " to generate a tailored resume and cover letter for this posting.\n")
-		}
-		help = "g generate · t view posting · p open posting · f folder · d delete · esc back"
-	}
 	return strings.TrimRight(b.String(), "\n"), help
 }
 
-func oldVersions(a *track.App) []string {
-	var out []string
-	for n := 1; ; n++ {
-		v := fmt.Sprintf("v%d", n)
-		if st, err := os.Stat(filepath.Join(a.Dir, v)); err != nil || !st.IsDir() {
-			return out
-		}
-		out = append(out, v)
-	}
-}
+// Editing: write the document to a temporary Markdown file, open it in an
+// editor, then save the result as a hand edit and rebuild the PDFs.
 
-func firstExisting(dir string, names ...string) string {
-	for _, n := range names {
-		if p := filepath.Join(dir, n); fileExists(p) {
-			return p
-		}
-	}
-	return dir
-}
+type editKind int
 
-// Editing: open the Markdown in an editor, then rebuild its PDF.
+const (
+	editResume editKind = iota
+	editCoverLetter
+)
 
 type editedMsg struct {
-	path string
-	err  error
+	kind   editKind
+	path   string // the temporary file
+	before string // its contents before editing
+	err    error
 }
 
-func (m Model) edit(path string) (tea.Model, tea.Cmd) {
-	cmd := m.cfg.Editor(path)
-	return m, tea.ExecProcess(cmd, func(err error) tea.Msg { return editedMsg{path: path, err: err} })
+func (m Model) edit(kind editKind) (tea.Model, tea.Cmd) {
+	p, err := m.loadProfile()
+	if err != nil {
+		m.setFlash(err.Error(), true)
+		return m, nil
+	}
+	name, text := "resume", m.app.ResumeMarkdown(p)
+	if kind == editCoverLetter {
+		name, text = "cover-letter", m.app.CoverLetterMarkdown(p)
+	}
+	f, err := os.CreateTemp("", "rezgen-"+name+"-*.md")
+	if err != nil {
+		m.setFlash(err.Error(), true)
+		return m, nil
+	}
+	_, err = f.WriteString(text)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(f.Name())
+		m.setFlash(err.Error(), true)
+		return m, nil
+	}
+	path := f.Name()
+	return m, tea.ExecProcess(m.cfg.Editor(path), func(err error) tea.Msg {
+		return editedMsg{kind: kind, path: path, before: text, err: err}
+	})
 }
 
 func (m Model) gotEdited(msg editedMsg) (tea.Model, tea.Cmd) {
+	defer os.Remove(msg.path)
 	if msg.err != nil {
 		m.setFlash("Editor: "+msg.err.Error(), true)
 		return m, nil
 	}
-	if m.cfg.NoPDF {
+	data, err := os.ReadFile(msg.path)
+	if err != nil {
+		m.setFlash(err.Error(), true)
 		return m, nil
 	}
-	out, pages, err := pdf.ConvertFile(msg.path)
-	if err != nil {
-		m.setFlash("Couldn't rebuild the PDF: "+err.Error(), true)
+	text := string(data)
+	if text == msg.before {
+		m.setFlash("No changes.", false)
+		return m, nil
+	}
+	if strings.TrimSpace(text) == "" {
+		m.setFlash("The document was empty, so the edit wasn't saved.", true)
+		return m, nil
+	}
+	a, st := m.app, m.store()
+	if msg.kind == editResume {
+		a.ResumeEdit = text
+	} else {
+		a.CoverLetterEdit = text
+	}
+	if err := st.Save(a); err != nil {
+		m.setFlash("Couldn't save the edit: "+err.Error(), true)
 		return m, nil
 	}
 	m.banner = nil
-	m.setFlash(fmt.Sprintf("Rebuilt %s (%s).", filepath.Base(out), plural(pages, "page")), false)
+	if m.cfg.NoPDF {
+		m.setFlash("Edit saved.", false)
+		return m, nil
+	}
+	p, err := m.loadProfile()
+	if err != nil {
+		m.setFlash(err.Error(), true)
+		return m, nil
+	}
+	pages, err := st.Export(a, p)
+	if err != nil {
+		m.setFlash("Edit saved, but the PDFs couldn't be rebuilt: "+err.Error(), true)
+		return m, nil
+	}
+	m.setFlash(fmt.Sprintf("Edit saved and PDFs rebuilt (resume: %s).", plural(pages, "page")), false)
 	return m, nil
 }
 
-// Generation: analyze, ask, write, build PDFs.
+// Generation: analyze, ask, write, export the PDFs.
 
 type genState struct {
 	active   bool
 	profile  *profile.Profile
 	tailor   *tailor.Tailor
-	text     string
 	analysis *tailor.Analysis
 	answers  []tailor.Answer
 	question int
@@ -229,11 +284,16 @@ type (
 		err      error
 	}
 	learnedMsg struct{ err error }
+	// writtenMsg carries an updated copy of the application, so background
+	// work never changes the one the screen is drawing.
 	writtenMsg struct {
-		pages    int
+		app      *store.Application
 		rejected *tailor.DraftError
-		pdfErr   error
 		err      error
+	}
+	pdfMsg struct {
+		pages int
+		err   error
 	}
 )
 
@@ -243,13 +303,8 @@ func (m Model) startGenerate() (tea.Model, tea.Cmd) {
 		m.setFlash(err.Error(), true)
 		return m, nil
 	}
-	text, err := m.app.Posting()
-	if err != nil {
-		m.setFlash(err.Error(), true)
-		return m, nil
-	}
 	m.banner = nil
-	m.gen = genState{active: true, profile: p, tailor: t, text: text}
+	m.gen = genState{active: true, profile: p, tailor: t}
 	ctx := m.startWork("")
 	m.steps = []step{
 		{label: "Analyze the posting against your profile", state: stepRunning},
@@ -260,6 +315,7 @@ func (m Model) startGenerate() (tea.Model, tea.Cmd) {
 	if m.cfg.NoPDF {
 		m.steps[genPDF].state = stepSkipped
 	}
+	text := m.app.Posting
 	return m, tea.Batch(m.spin.Tick, func() tea.Msg {
 		a, err := t.Analyze(ctx, text)
 		return analyzedMsg{analysis: a, err: err}
@@ -350,30 +406,21 @@ func (m Model) startWriting() (tea.Model, tea.Cmd) {
 	m.screen = scrWorking
 	m.steps[genWrite].state = stepRunning
 	m.started = m.cfg.Now()
-	g, app, on := m.gen, m.app, m.cfg.Now()
+	g, st, on := m.gen, m.store(), m.cfg.Now()
+	app := *m.app
 	ctx := m.ctx()
 	return m, tea.Batch(m.spin.Tick, func() tea.Msg {
-		d, err := g.tailor.Write(ctx, g.text, g.analysis, g.answers)
+		d, err := g.tailor.Write(ctx, app.Posting, g.analysis, g.answers)
 		var de *tailor.DraftError
 		if err != nil && !errors.As(err, &de) {
 			return writtenMsg{err: err}
 		}
-		res := tailor.Results{Analysis: g.analysis, Answers: g.answers, Draft: d}
-		if err := tailor.WriteResults(app, g.profile, res, on); err != nil {
+		res := store.Results{Analysis: g.analysis, Answers: g.answers, Draft: d, Rejected: de}
+		if err := st.SetResults(&app, res, on); err != nil {
 			return writtenMsg{err: err}
 		}
-		if de != nil {
-			if err := tailor.SaveRejected(app.Dir, de); err != nil {
-				return writtenMsg{err: err}
-			}
-		}
-		return writtenMsg{rejected: de}
+		return writtenMsg{app: &app, rejected: de}
 	})
-}
-
-type pdfMsg struct {
-	pages int
-	err   error
 }
 
 func (m Model) gotWritten(msg writtenMsg) (tea.Model, tea.Cmd) {
@@ -383,26 +430,17 @@ func (m Model) gotWritten(msg writtenMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
 		return m.genFailed(msg.err)
 	}
+	m.app = msg.app
 	if msg.rejected != nil || m.cfg.NoPDF {
 		return m.finishGen(msg.rejected, 0, nil)
 	}
 	m.steps[genWrite].state = stepDone
 	m.steps[genPDF].state = stepRunning
 	m.started = m.cfg.Now()
-	dir := m.app.Dir
+	st, p, app := m.store(), m.gen.profile, *m.app
 	return m, func() tea.Msg {
-		var msg pdfMsg
-		for _, f := range []string{"resume.md", "cover-letter.md"} {
-			_, pages, err := pdf.ConvertFile(filepath.Join(dir, f))
-			if err != nil {
-				msg.err = err
-				break
-			}
-			if f == "resume.md" {
-				msg.pages = pages
-			}
-		}
-		return msg
+		pages, err := st.Export(&app, p)
+		return pdfMsg{pages: pages, err: err}
 	}
 }
 
@@ -413,8 +451,7 @@ func (m Model) gotPDF(msg pdfMsg) (tea.Model, tea.Cmd) {
 	return m.finishGen(nil, msg.pages, msg.err)
 }
 
-// finishGen returns to the application screen with a summary of what was
-// made and where.
+// finishGen returns to the application screen with the outcome.
 func (m Model) finishGen(rejected *tailor.DraftError, pages int, pdfErr error) (tea.Model, tea.Cmd) {
 	maxPages := 0
 	if m.gen.profile != nil {
@@ -428,13 +465,10 @@ func (m Model) finishGen(rejected *tailor.DraftError, pages int, pdfErr error) (
 	if rejected != nil {
 		m.bannerErr = true
 		m.banner = []string{
-			errStyle.Bold(true).Render("✗ The draft failed the source checks twice, so no resume was made."),
+			errStyle.Bold(true).Render("✗ The draft failed the source checks twice, so no documents were made."),
+			"The problems are listed above. Press " + keyCap.Render("g") + " to try again.",
 		}
-		for _, p := range rejected.Problems {
-			m.banner = append(m.banner, "  • "+p)
-		}
-		m.banner = append(m.banner, "", faint.Render("The rejected draft is saved as draft-rejected.json in the folder above. Press g to try again."))
-		return m, m.loadApps(a.Dir)
+		return m, m.loadApps(a.ID)
 	}
 	m.bannerErr = false
 	m.banner = []string{
@@ -445,12 +479,13 @@ func (m Model) finishGen(rejected *tailor.DraftError, pages int, pdfErr error) (
 		m.banner = append(m.banner, "Apply at "+link(a.Source, accent.Render(clip(a.Source, m.innerWidth()-14))))
 	}
 	if pdfErr != nil {
+		m.bannerErr = true
 		m.banner = append(m.banner, errStyle.Render("PDF export failed: "+pdfErr.Error()))
 	}
 	if pages > 0 && maxPages > 0 && pages > maxPages {
 		m.banner = append(m.banner, errStyle.Render(fmt.Sprintf("The resume is %d pages; your profile asks for %d. Press e to trim it.", pages, maxPages)))
 	}
-	return m, m.loadApps(a.Dir)
+	return m, m.loadApps(a.ID)
 }
 
 func (m Model) genFailed(err error) (tea.Model, tea.Cmd) {
@@ -471,7 +506,7 @@ func (m Model) questionView() string {
 	a := g.analysis
 	q := a.Questions[g.question]
 	var b strings.Builder
-	b.WriteString(bold.Render(m.app.Name) + "\n")
+	b.WriteString(bold.Render(clip(m.app.Name, m.innerWidth())) + "\n")
 	b.WriteString(okStyle.Render(fmt.Sprintf("%d requirements matched", len(a.Matches))))
 	if len(a.Gaps) > 0 {
 		b.WriteString(faint.Render(" · ") + errStyle.Render(fmt.Sprintf("%d gaps: %s", len(a.Gaps), clip(strings.Join(a.Gaps, ", "), 80))))

@@ -14,6 +14,7 @@ import (
 	"github.com/Blathe/rezgen/internal/llm"
 	"github.com/Blathe/rezgen/internal/llm/llmtest"
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 // useFake points generate at a scripted model, canned stdin and a fixed date
@@ -60,16 +61,14 @@ func TestGenerate(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 	}
-	dir := filepath.Join(out, "2026-10-02-northwind-freight-ai-solutions-engineer")
-	if !strings.Contains(stdout.String(), dir) {
+	st, a := onlyApp(t, out)
+	dir := filepath.Join(out, "2026-10-02-000000-northwind-freight-ai-solutions-engineer")
+	if st.DocsDir(a) != dir || !strings.Contains(stdout.String(), dir) {
 		t.Errorf("stdout doesn't name %s:\n%s", dir, stdout.String())
 	}
-	resume, err := os.ReadFile(filepath.Join(dir, "resume.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(resume), "# Jordan Example") {
-		t.Errorf("unexpected resume:\n%s", resume)
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 2 {
+		t.Errorf("the documents folder should hold only the two PDFs, has %d entries", len(entries))
 	}
 	for _, f := range []string{"resume.pdf", "cover-letter.pdf"} {
 		data, err := os.ReadFile(filepath.Join(dir, f))
@@ -77,12 +76,8 @@ func TestGenerate(t *testing.T) {
 			t.Errorf("%s missing or not a PDF: %v", f, err)
 		}
 	}
-	answers, err := os.ReadFile(filepath.Join(dir, "answers.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(answers), "No, only Docker.") || strings.Contains(string(answers), "q-kubernetes-2") {
-		t.Errorf("unexpected answers:\n%s", answers)
+	if a.Draft == nil || len(a.Answers) != 1 || a.Answers[0].Text != "No, only Docker." {
+		t.Errorf("record: %+v", a)
 	}
 	if !strings.Contains(fake.Requests[1].Prompt, "No, only Docker.") {
 		t.Error("answer not passed to the write call")
@@ -162,8 +157,9 @@ func TestGenerateNoPDF(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 	}
-	if _, err := os.Stat(filepath.Join(out, "2026-10-02-northwind-freight-ai-solutions-engineer", "resume.pdf")); err == nil {
-		t.Error("resume.pdf written despite -no-pdf")
+	st, a := onlyApp(t, out)
+	if st.HasPDFs(a) || a.Status() != store.Generated {
+		t.Error("-no-pdf should save the documents without exporting PDFs")
 	}
 }
 
@@ -195,13 +191,9 @@ func TestGenerateSavesRejectedDraft(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit %d, want 1", code)
 	}
-	rejected := filepath.Join(out, "2026-10-02-northwind-freight-ai-solutions-engineer", "draft-rejected.json")
-	data, err := os.ReadFile(rejected)
-	if err != nil {
-		t.Fatalf("rejected draft not saved: %v\nstderr:\n%s", err, stderr.String())
-	}
-	if !strings.Contains(string(data), "fact-99") {
-		t.Errorf("unexpected rejected draft:\n%s", data)
+	_, a := onlyApp(t, out)
+	if a.Status() != store.NotStarted || a.Rejected == nil || !strings.Contains(strings.Join(a.Rejected.Problems, " "), "fact-99") {
+		t.Errorf("rejected draft not recorded: %+v\nstderr:\n%s", a, stderr.String())
 	}
 }
 
@@ -224,12 +216,8 @@ func TestGenerateFromURL(t *testing.T) {
 	if p := fake.Requests[0].Prompt; !strings.Contains(p, "<posting>\nAI Solutions Engineer\n\nNorthwind Freight builds") || strings.Contains(p, "Jobs") {
 		t.Errorf("page text not extracted cleanly:\n%s", p)
 	}
-	saved, err := os.ReadFile(filepath.Join(out, "2026-10-02-northwind-freight-ai-solutions-engineer", "posting.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(string(saved), "Source: "+srv.URL+"/jobs/1\n\n") {
-		t.Errorf("posting.md doesn't record the URL:\n%s", saved)
+	if _, a := onlyApp(t, out); a.Source != srv.URL+"/jobs/1" || !strings.HasPrefix(a.Posting, "AI Solutions Engineer") {
+		t.Errorf("source/posting not recorded: %q %q", a.Source, a.Posting)
 	}
 }
 
@@ -238,4 +226,15 @@ func TestGenerateRequiresPosting(t *testing.T) {
 	if code := run([]string{"generate", "-profile", exampleProfile}, &stdout, &stderr); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
+}
+
+// onlyApp returns the single application saved under out.
+func onlyApp(t *testing.T, out string) (*store.Store, *store.Application) {
+	t.Helper()
+	st := store.New(out)
+	apps, err := st.List()
+	if err != nil || len(apps) != 1 {
+		t.Fatalf("want one application, got %d (%v)", len(apps), err)
+	}
+	return st, apps[0]
 }

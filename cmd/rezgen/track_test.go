@@ -2,24 +2,25 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Blathe/rezgen/internal/track"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 func TestList(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "applications")
 	old := now
 	now = func() time.Time { return time.Date(2026, 10, 3, 15, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { now = old })
 
-	track.Create(root, "Northwind Freight - AI Solutions Engineer", "posting", "", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
-	acme, _ := track.Create(root, "Acme - Automation Engineer", "posting", "", time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC))
-	os.WriteFile(filepath.Join(acme.Dir, "resume.md"), []byte("x"), 0o644)
+	st := store.New(root)
+	st.Create("Northwind Freight - AI Solutions Engineer", "posting", "", time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC))
+	acme, _ := st.Create("Acme - Automation Engineer", "posting", "", time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC))
+	acme.ResumeEdit = "# Resume\n"
+	st.Save(acme)
 
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"list", "-out", root}, &stdout, &stderr); code != 0 {
@@ -27,8 +28,8 @@ func TestList(t *testing.T) {
 	}
 	out := stdout.String()
 	lines := strings.Split(out, "\n")
-	if !strings.HasPrefix(lines[1], "generated    2026-10-03 (today)   Acme") {
-		t.Errorf("newest first, with status:\n%s", out)
+	if !strings.HasPrefix(lines[1], "generated    2026-10-03 (today)   Acme") || !strings.Contains(lines[1], st.DocsDir(acme)) {
+		t.Errorf("newest first, with status and folder:\n%s", out)
 	}
 	if !strings.Contains(out, "not started  2026-10-01 (2 days)  Northwind") || !strings.Contains(out, "2 applications: 1 generated, 1 not started") {
 		t.Errorf("unexpected list:\n%s", out)

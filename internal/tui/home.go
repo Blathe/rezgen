@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 
 	"github.com/Blathe/rezgen/internal/posting"
-	"github.com/Blathe/rezgen/internal/track"
+	"github.com/Blathe/rezgen/internal/store"
 )
 
 func (m Model) homeKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -44,7 +44,7 @@ func (m Model) homeKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) selected() *track.App {
+func (m Model) selected() *store.Application {
 	if m.cursor < 0 || m.cursor >= len(m.apps) {
 		return nil
 	}
@@ -87,18 +87,18 @@ func (m Model) homeView() (string, string) {
 		})
 	for i := start; i < end; i++ {
 		a := m.apps[i]
-		created := track.Age(a.Created, m.cfg.Now())
+		created := store.Age(a.Created, m.cfg.Now())
 		if i == m.cursor {
 			// Plain text, so the row's highlight isn't interrupted by the
 			// cells' own colors.
 			icon := "○ "
-			if a.Status == track.Generated {
+			if a.Status() == store.Generated {
 				icon = "● "
 			}
-			t.Row("▸", icon+string(a.Status), clip(a.Name, nameW), created)
+			t.Row("▸", icon+string(a.Status()), clip(a.Name, nameW), created)
 			continue
 		}
-		t.Row(" ", statusPill(a.Status), clip(a.Name, nameW), faint.Render(created))
+		t.Row(" ", statusPill(a.Status()), clip(a.Name, nameW), faint.Render(created))
 	}
 
 	var b strings.Builder
@@ -108,7 +108,7 @@ func (m Model) homeView() (string, string) {
 	}
 	generated := 0
 	for _, a := range m.apps {
-		if a.Status == track.Generated {
+		if a.Status() == store.Generated {
 			generated++
 		}
 	}
@@ -118,11 +118,11 @@ func (m Model) homeView() (string, string) {
 	return b.String(), help
 }
 
-func (m Model) askDelete(a *track.App) (tea.Model, tea.Cmd) {
-	prompt := fmt.Sprintf("Delete %s?\n\nThis removes %s and everything in it, including any generated documents.",
-		bold.Render(a.Name), a.Dir)
+func (m Model) askDelete(a *store.Application) (tea.Model, tea.Cmd) {
+	prompt := fmt.Sprintf("Delete %s?\n\nThis removes the saved posting and the generated resume and cover letter.",
+		bold.Render(a.Name))
 	return m.ask(prompt, func(m Model) (tea.Model, tea.Cmd) {
-		if err := a.Delete(); err != nil {
+		if err := m.store().Delete(a); err != nil {
 			m.setFlash(err.Error(), true)
 			return m, nil
 		}
@@ -223,7 +223,7 @@ func (m Model) newNameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.textIn.Blur()
 		p := m.newPost
-		a, err := track.Create(m.appsDir(), name, p.Text, p.Source, m.cfg.Now())
+		a, err := m.store().Create(name, p.Text, p.Source, m.cfg.Now())
 		if err != nil {
 			m.setFlash(err.Error(), true)
 			return m, nil
@@ -231,7 +231,7 @@ func (m Model) newNameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.newPost = nil
 		m.screen = scrHome
 		m.setFlash(fmt.Sprintf("Added %s. Open it to generate your resume and cover letter.", a.Name), false)
-		return m, m.loadApps(a.Dir)
+		return m, m.loadApps(a.ID)
 	}
 	return m.updateTextIn(k)
 }
