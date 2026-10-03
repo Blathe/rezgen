@@ -159,6 +159,22 @@ func TestCheck(t *testing.T) {
 		})
 	}
 
+	t.Run("learned facts are citable and can supply skills", func(t *testing.T) {
+		lp := *p
+		lp.LearnedFacts = []profile.LearnedFact{{ID: "q-docker", Question: "Containers?", Answer: "Yes, I run everything in Docker."}}
+		d := goodDraft(t)
+		d.Experience[0].Bullets[0].Sources = append(d.Experience[0].Bullets[0].Sources, "q-docker")
+		d.Skills[0].Items = append(d.Skills[0].Items, "Docker")
+		if probs := newCatalog(&lp, nil).check(d); len(probs) > 0 {
+			t.Errorf("want no problems, got %v", probs)
+		}
+		// A skill only named in a question, not an answer, is still rejected.
+		d.Skills[0].Items = append(d.Skills[0].Items, "Containers")
+		if probs := newCatalog(&lp, nil).check(d); len(probs) != 1 {
+			t.Errorf("want 1 problem, got %v", probs)
+		}
+	})
+
 	t.Run("answers and skills are citable", func(t *testing.T) {
 		d := goodDraft(t)
 		d.Experience[0].Bullets[0].Sources = append(d.Experience[0].Bullets[0].Sources, "q-team-size")

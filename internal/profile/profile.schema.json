@@ -118,6 +118,22 @@
         }
       }
     },
+    "learned_facts": {
+      "type": "array",
+      "description": "Answers given to rezgen's questions, saved so they aren't asked again",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "question", "answer"],
+        "properties": {
+          "id": {"$ref": "#/$defs/id"},
+          "question": {"$ref": "#/$defs/nonEmpty"},
+          "answer": {"$ref": "#/$defs/nonEmpty"},
+          "learned": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+          "context": {"type": "string"}
+        }
+      }
+    },
     "preferences": {
       "type": "object",
       "additionalProperties": false,

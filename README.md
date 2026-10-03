@@ -35,6 +35,7 @@ Write the profile as a superset of any one resume. Each highlight is a factual a
 | `education`, `certifications` | Credentials |
 | `cover_letter_stories` | Short paragraphs about motivation or notable wins |
 | `preferences` | Tone, page limit, words to avoid |
+| `learned_facts` | Your saved answers to rezgen's questions (filled in by `rezgen generate`; edit or delete freely) |
 
 The full JSON Schema lives at [`internal/profile/profile.schema.json`](internal/profile/profile.schema.json) (also printed by `rezgen schema`). Point your editor at it with a `"$schema"` key, as the example does, to get completion and inline errors.
 
@@ -66,7 +67,7 @@ rezgen posting https://job-boards.greenhouse.io/acme/jobs/123
 It runs in three steps:
 
 1. **Analyze.** Claude reads the posting against your profile and lists what the role requires, which requirements your profile already supports, and the gaps.
-2. **Ask.** If a true answer could close a gap (say, a tool you've used but never wrote down), rezgen asks you up to 5 questions in the terminal. Press Enter to skip any of them.
+2. **Ask.** If a true answer could close a gap (say, a tool you've used but never wrote down), rezgen asks you up to 5 questions in the terminal. Press Enter to skip any of them. Afterwards it offers to save your answers to the profile's `learned_facts`, so later applications use them as facts and never ask the same thing again. Only that section of `profile.json` is rewritten; the rest of the file is left exactly as you wrote it.
 3. **Write.** Claude drafts the resume and cover letter. Every bullet and paragraph cites the profile IDs or answers it came from. rezgen rejects a draft that cites an ID that doesn't exist, puts one role's highlight under another role, lists a skill that isn't in your profile, or uses one of your `avoid_words`. It asks once more with the problems listed, and if the second draft fails too it saves that draft as `draft-rejected.json` for you to inspect.
 
 Contact details, job titles, dates, education and certifications are copied straight from the profile, never retyped by the model.

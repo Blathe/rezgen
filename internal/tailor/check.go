@@ -18,6 +18,9 @@ type catalog struct {
 	roles    map[string]bool
 	projects map[string]bool
 	skills   map[string]bool
+	// answerText holds the lowercased answers (learned and from this run),
+	// which may name skills the profile's skill lists don't.
+	answerText []string
 }
 
 func newCatalog(p *profile.Profile, answers []Answer) *catalog {
@@ -49,11 +52,16 @@ func newCatalog(p *profile.Profile, answers []Answer) *catalog {
 	for _, s := range p.CoverLetterStories {
 		c.owner[s.ID] = ""
 	}
+	for _, f := range p.LearnedFacts {
+		c.owner[f.ID] = ""
+		c.answerText = append(c.answerText, strings.ToLower(f.Answer))
+	}
 	for i := range p.SummaryFacts {
 		c.owner[fmt.Sprintf("fact-%d", i+1)] = ""
 	}
 	for _, a := range answers {
 		c.owner[a.QuestionID] = ""
+		c.answerText = append(c.answerText, strings.ToLower(a.Text))
 	}
 	for _, group := range p.Skills {
 		addSkills(group)
@@ -62,6 +70,23 @@ func newCatalog(p *profile.Profile, answers []Answer) *catalog {
 }
 
 func normSkill(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// knowsSkill reports whether s is a profile skill or is named in one of the
+// candidate's answers. Only answers count, not questions, so "No, I haven't
+// used Kubernetes" still mentions it but "Have you used Kubernetes?" alone
+// doesn't; the model is told not to list a skill an answer denies.
+func (c *catalog) knowsSkill(s string) bool {
+	n := normSkill(s)
+	if c.skills[n] {
+		return true
+	}
+	for _, t := range c.answerText {
+		if strings.Contains(t, n) {
+			return true
+		}
+	}
+	return false
+}
 
 // check returns every way d strays from the profile. An empty result means
 // every line is cited, every citation exists, and nothing uses an avoided
@@ -119,7 +144,7 @@ func (c *catalog) check(d *Draft) []string {
 	}
 	for _, g := range d.Skills {
 		for _, s := range g.Items {
-			if !c.skills[normSkill(s)] {
+			if !c.knowsSkill(s) {
 				add("skill %q is not in the profile", s)
 			}
 		}

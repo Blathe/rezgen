@@ -94,7 +94,15 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	case *postingPath == "-":
 		fmt.Fprintf(stderr, "Skipping %d question(s): the posting came from stdin, so there's no way to answer.\n", len(a.Questions))
 	default:
-		answers = ask(a.Questions, stdin, stderr)
+		in := bufio.NewScanner(stdin)
+		answers = ask(a.Questions, in, stderr)
+		if len(answers) > 0 && confirm(in, stderr, fmt.Sprintf("Save %s to %s so rezgen won't ask again?", countNoun(len(answers), "answer"), *profilePath)) {
+			if err := learn(*profilePath, a, answers); err != nil {
+				fmt.Fprintf(stderr, "Couldn't save answers to the profile: %v\n", err)
+			} else {
+				fmt.Fprintf(stderr, "Saved under learned_facts in %s.\n", *profilePath)
+			}
+		}
 	}
 
 	fmt.Fprintln(stderr, "Writing the resume and cover letter...")
@@ -161,9 +169,8 @@ func writePDFs(stderr io.Writer, maxPages int, paths ...string) int {
 }
 
 // ask puts each question to the candidate and returns the non-empty answers.
-func ask(qs []tailor.Question, in io.Reader, out io.Writer) []tailor.Answer {
+func ask(qs []tailor.Question, sc *bufio.Scanner, out io.Writer) []tailor.Answer {
 	fmt.Fprintf(out, "\n%d question(s) that could strengthen this application. Answer only with facts; press Enter to skip.\n", len(qs))
-	sc := bufio.NewScanner(in)
 	var answers []tailor.Answer
 	for i, q := range qs {
 		fmt.Fprintf(out, "\n%d. %s\n   (%s)\n> ", i+1, q.Text, q.Why)
@@ -177,6 +184,45 @@ func ask(qs []tailor.Question, in io.Reader, out io.Writer) []tailor.Answer {
 	}
 	fmt.Fprintln(out)
 	return answers
+}
+
+// confirm asks a yes/no question that defaults to yes.
+func confirm(sc *bufio.Scanner, out io.Writer, question string) bool {
+	fmt.Fprintf(out, "%s [Y/n] ", question)
+	if !sc.Scan() {
+		fmt.Fprintln(out)
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(sc.Text())) {
+	case "", "y", "yes":
+		return true
+	}
+	return false
+}
+
+// learn saves answers to the profile's learned_facts.
+func learn(profilePath string, a *tailor.Analysis, answers []tailor.Answer) error {
+	ctx := strings.TrimSpace(strings.Join([]string{a.Company, a.Role}, ", "))
+	ctx = strings.Trim(ctx, ", ")
+	facts := make([]profile.LearnedFact, len(answers))
+	for i, an := range answers {
+		facts[i] = profile.LearnedFact{
+			ID:       an.QuestionID,
+			Question: an.Question,
+			Answer:   an.Text,
+			Learned:  now().Format("2006-01-02"),
+			Context:  ctx,
+		}
+	}
+	_, err := profile.AddLearnedFacts(profilePath, facts)
+	return err
+}
+
+func countNoun(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 func writeRejected(dir string, de *tailor.DraftError) error {

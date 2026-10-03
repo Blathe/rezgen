@@ -13,6 +13,7 @@ import (
 
 	"github.com/Blathe/rezgen/internal/llm"
 	"github.com/Blathe/rezgen/internal/llm/llmtest"
+	"github.com/Blathe/rezgen/internal/profile"
 )
 
 // useFake points generate at a scripted model, canned stdin and a fixed date
@@ -85,6 +86,59 @@ func TestGenerate(t *testing.T) {
 	}
 	if !strings.Contains(fake.Requests[1].Prompt, "No, only Docker.") {
 		t.Error("answer not passed to the write call")
+	}
+}
+
+func TestGenerateLearnsAnswers(t *testing.T) {
+	prof := filepath.Join(t.TempDir(), "profile.json")
+	data, _ := os.ReadFile(exampleProfile)
+	os.WriteFile(prof, data, 0o644)
+
+	// Answer the first question, skip the second, accept saving.
+	useFake(t, "No, only Docker.\n\n\n", analysisFixture, draftFixture)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "-profile", prof, "-posting", writePosting(t), "-out", t.TempDir(), "-no-pdf"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Save 1 answer to") {
+		t.Errorf("no save prompt:\n%s", stderr.String())
+	}
+	p, err := profile.Load(prof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := profile.LearnedFact{
+		ID: "q-kubernetes", Question: "Have you deployed services on Kubernetes?", Answer: "No, only Docker.",
+		Learned: "2026-10-02", Context: "Northwind Freight, AI Solutions Engineer",
+	}
+	if len(p.LearnedFacts) != 1 || p.LearnedFacts[0] != want {
+		t.Errorf("learned facts: %+v", p.LearnedFacts)
+	}
+
+	// The next run sends the learned fact to the model with the profile.
+	fake := useFake(t, "", analysisFixture, draftFixture)
+	if code := run([]string{"generate", "-profile", prof, "-posting", writePosting(t), "-out", t.TempDir(), "-no-pdf", "-no-questions"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("second run exit %d", code)
+	}
+	if !strings.Contains(fake.Requests[0].System, "No, only Docker.") {
+		t.Error("learned fact not in the system prompt")
+	}
+}
+
+func TestGenerateDeclinesLearning(t *testing.T) {
+	prof := filepath.Join(t.TempDir(), "profile.json")
+	data, _ := os.ReadFile(exampleProfile)
+	os.WriteFile(prof, data, 0o644)
+
+	useFake(t, "No, only Docker.\n\nn\n", analysisFixture, draftFixture)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"generate", "-profile", prof, "-posting", writePosting(t), "-out", t.TempDir(), "-no-pdf"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
+	}
+	after, _ := os.ReadFile(prof)
+	if !bytes.Equal(data, after) {
+		t.Error("profile changed after declining")
 	}
 }
 
