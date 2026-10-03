@@ -102,6 +102,24 @@ func (r *Record) Updated() string {
 	return r.Created
 }
 
+// Age formats a YYYY-MM-DD date with how long before now it was, e.g.
+// "2026-10-01 (2 days)".
+func Age(date string, now time.Time) string {
+	t, err := time.Parse(dateFormat, date)
+	if err != nil {
+		return date
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	switch days := int(today.Sub(t).Hours() / 24); {
+	case days <= 0:
+		return date + " (today)"
+	case days == 1:
+		return date + " (1 day)"
+	default:
+		return fmt.Sprintf("%s (%d days)", date, days)
+	}
+}
+
 // Save writes r to dir/application.json.
 func Save(dir string, r *Record) error {
 	data, err := json.MarshalIndent(r, "", "  ")

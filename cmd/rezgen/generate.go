@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -97,7 +96,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 		in := bufio.NewScanner(stdin)
 		answers = ask(a.Questions, in, stderr)
 		if len(answers) > 0 && confirm(in, stderr, fmt.Sprintf("Save %s to %s so rezgen won't ask again?", countNoun(len(answers), "answer"), *profilePath)) {
-			if err := learn(*profilePath, a, answers); err != nil {
+			if err := tailor.LearnAnswers(*profilePath, a, answers, now()); err != nil {
 				fmt.Fprintf(stderr, "Couldn't save answers to the profile: %v\n", err)
 			} else {
 				fmt.Fprintf(stderr, "Saved under learned_facts in %s.\n", *profilePath)
@@ -113,7 +112,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	case errors.As(err, &de):
 		dir, saveErr := tailor.Save(*outDir, p, app, now())
 		if saveErr == nil {
-			saveErr = writeRejected(dir, de)
+			saveErr = tailor.SaveRejected(dir, de)
 		}
 		fmt.Fprintln(stderr, err)
 		if saveErr != nil {
@@ -201,40 +200,11 @@ func confirm(sc *bufio.Scanner, out io.Writer, question string) bool {
 	return false
 }
 
-// learn saves answers to the profile's learned_facts.
-func learn(profilePath string, a *tailor.Analysis, answers []tailor.Answer) error {
-	ctx := strings.TrimSpace(strings.Join([]string{a.Company, a.Role}, ", "))
-	ctx = strings.Trim(ctx, ", ")
-	facts := make([]profile.LearnedFact, len(answers))
-	for i, an := range answers {
-		facts[i] = profile.LearnedFact{
-			ID:       an.QuestionID,
-			Question: an.Question,
-			Answer:   an.Text,
-			Learned:  now().Format("2006-01-02"),
-			Context:  ctx,
-		}
-	}
-	_, err := profile.AddLearnedFacts(profilePath, facts)
-	return err
-}
-
 func countNoun(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-func writeRejected(dir string, de *tailor.DraftError) error {
-	data, err := json.MarshalIndent(struct {
-		Problems []string      `json:"problems"`
-		Draft    *tailor.Draft `json:"draft"`
-	}{de.Problems, de.Draft}, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, "draft-rejected.json"), append(data, '\n'), 0o644)
 }
 
 func orUnknown(s string) string {

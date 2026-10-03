@@ -50,7 +50,7 @@ func list(args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		shown++
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", a.Status, age(a.Updated(), now()), clip(orDash(a.Company), 30), clip(orDash(a.Role), 40), a.Name)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", a.Status, track.Age(a.Updated(), now()), clip(orDash(a.Company), 30), clip(orDash(a.Role), 40), a.Name)
 	}
 	tw.Flush()
 	if shown == 0 {
@@ -152,23 +152,6 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 		}
 		pos = append(pos, args[0])
 		args = args[1:]
-	}
-}
-
-// age formats a YYYY-MM-DD date with how long ago it was.
-func age(date string, now time.Time) string {
-	t, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		return date
-	}
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	switch days := int(today.Sub(t).Hours() / 24); {
-	case days <= 0:
-		return date + " (today)"
-	case days == 1:
-		return date + " (1 day)"
-	default:
-		return fmt.Sprintf("%s (%d days)", date, days)
 	}
 }
 
