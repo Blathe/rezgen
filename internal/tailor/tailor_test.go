@@ -12,6 +12,7 @@ import (
 
 	"github.com/Blathe/rezgen/internal/llm/llmtest"
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/track"
 )
 
 func loadProfile(t *testing.T) *profile.Profile {
@@ -215,32 +216,36 @@ func TestRender(t *testing.T) {
 	}
 }
 
-func TestSave(t *testing.T) {
+func TestWriteResults(t *testing.T) {
 	p := loadProfile(t)
-	root := t.TempDir()
 	on := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
-	app := Application{
-		Posting:  "posting text",
-		Analysis: &Analysis{Company: "Northwind Freight", Role: "AI Solutions Engineer (Remote)"},
-		Draft:    goodDraft(t),
-	}
-	dir, err := Save(root, p, app, on)
+	app, err := track.Create(t.TempDir(), "Northwind", "posting text", "", on)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(root, "2026-10-02-northwind-freight-ai-solutions-engineer-remote"); dir != want {
-		t.Errorf("dir %s, want %s", dir, want)
+	a := &Analysis{Company: "Northwind Freight", Role: "AI Solutions Engineer"}
+
+	// A rejected draft saves the analysis but leaves the application not started.
+	if err := WriteResults(app, p, Results{Analysis: a}, on); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := track.Load(app.Dir); got.Status != track.NotStarted || !got.Has("analysis.json") {
+		t.Errorf("after rejected draft: %+v", got.Record)
+	}
+
+	if err := WriteResults(app, p, Results{Analysis: a, Draft: goodDraft(t)}, on); err != nil {
+		t.Fatal(err)
 	}
 	for _, f := range []string{"posting.md", "analysis.json", "draft.json", "resume.md", "cover-letter.md", "sources.md", "application.json"} {
-		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+		if _, err := os.Stat(filepath.Join(app.Dir, f)); err != nil {
 			t.Errorf("missing %s", f)
 		}
 	}
-	dir2, err := Save(root, p, app, on)
-	if err != nil {
-		t.Fatal(err)
+	got, _ := track.Load(app.Dir)
+	if got.Status != track.Generated || got.Company != "Northwind Freight" || got.Name != "Northwind" {
+		t.Errorf("after generation: %+v", got.Record)
 	}
-	if dir2 != dir+"-2" {
-		t.Errorf("second save went to %s, want %s-2", dir2, dir)
+	if a.Name() != "Northwind Freight - AI Solutions Engineer" || (&Analysis{}).Name() != "Application" {
+		t.Errorf("Name() = %q", a.Name())
 	}
 }

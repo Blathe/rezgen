@@ -107,4 +107,55 @@ func (l Loader) fetch(ctx context.Context, url string) (string, error) {
 	return text, nil
 }
 
-const saveHint = "\nCopy the posting text into a file and pass that to -posting instead."
+const saveHint = "\nCopy the posting text from your browser and paste it in instead (or save it to a file)."
+
+// FromInput interprets what someone typed or pasted: a link, the path to a
+// file holding the posting, or the posting text itself. Surrounding quotes,
+// as Windows adds when copying a path, are ignored.
+func (l Loader) FromInput(ctx context.Context, input string) (*Posting, error) {
+	s := strings.TrimSpace(input)
+	if s == "" {
+		return nil, errors.New("paste a link or the job description first")
+	}
+	if !strings.ContainsAny(s, "\r\n") {
+		src := strings.Trim(s, `"'`)
+		if IsURL(src) {
+			return l.Load(ctx, src)
+		}
+		if st, err := os.Stat(src); err == nil && !st.IsDir() {
+			return l.Load(ctx, src)
+		}
+		if len(s) < minURLText {
+			return nil, fmt.Errorf("%q isn't a link or a file, and it's too short to be a job description", clip(s, 60))
+		}
+	}
+	return &Posting{Text: s}, nil
+}
+
+// SuggestName proposes an application name from the posting: "Company -
+// Title" when the text starts the way structured job data does, otherwise
+// its first line.
+func SuggestName(p *Posting) string {
+	lines := strings.Split(p.Text, "\n")
+	first := ""
+	for _, l := range lines {
+		if l = strings.TrimSpace(l); l != "" && !strings.EqualFold(l, "back to jobs") {
+			first = l
+			break
+		}
+	}
+	for _, l := range lines[:min(len(lines), 4)] {
+		if company, ok := strings.CutPrefix(strings.TrimSpace(l), "Company: "); ok && first != "" {
+			return clip(company+" - "+first, 80)
+		}
+	}
+	return clip(first, 80)
+}
+
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-3])) + "..."
+}

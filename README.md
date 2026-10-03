@@ -1,59 +1,66 @@
 # rezgen
 
-rezgen tailors a resume and cover letter to a specific job posting. It keeps everything about you in one JSON profile, reads a posting, asks a few questions, and uses the Claude API to select and reword the experience that fits. It never invents facts: every line on the page traces back to the profile or your answers.
+rezgen tailors a resume and cover letter to a specific job posting. It keeps everything about you in one profile, reads a posting, asks a few questions, and uses the Claude API to select and reword the experience that fits. It never invents facts: every line on the page traces back to your profile or your answers.
 
-> Status: Phases 1-4 of 5. The interactive app, generation with PDF output and application tracking all work today.
+> Status: Phases 1-4 of 5. The interactive app, generation with PDF output and the command-line tools all work today.
 
 ## Quick start
 
-1. Install rezgen and create your profile (below).
-2. Put your Claude API key in `.env` (see [Generate an application](#generate-an-application)).
-3. Run `rezgen` with no arguments to open the app:
+```sh
+go install github.com/Blathe/rezgen/cmd/rezgen@latest
+rezgen
+```
+
+The first launch walks you through setup:
+
+1. **API key.** Paste a key from [console.anthropic.com](https://console.anthropic.com) (Settings > API keys). rezgen checks it works before going on. (OpenAI support is coming next.)
+2. **Model.** Claude Opus 5.5 writes best; Sonnet 5.5 is faster and about half the cost; Haiku 4.5 is the cheapest.
+3. **Data folder.** Where your profile and applications live, `Documents/rezgen` by default.
+4. **Import.** If you ran an earlier version of rezgen from the folder you're in, it offers to copy your `.env` key, `profile.json` and `applications/` across.
+5. **Profile.** If you don't have one yet, paste your resume or LinkedIn profile and Claude drafts it, listing anything worth adding (metrics, missing dates). Or point it at an existing `profile.json`.
+
+Settings are saved to `%AppData%\rezgen\config.json` on Windows, `~/Library/Application Support/rezgen/config.json` on macOS and `~/.config/rezgen/config.json` on Linux, readable only by you. Press `,` in the app to change the model or key later.
+
+## Using the app
 
 ```
   rezgen  resume and cover letter tailoring
 
-    STATUS        UPDATED              COMPANY                ROLE
-  ▸ interviewing  2026-10-08 (2 days)  Northwind Freight      AI Solutions Engineer
-    applied       2026-10-03 (7 days)  Acme                   Automation Engineer
+    STATUS       CREATED              NAME
+  ▸ not started  2026-10-03 (today)   Acme - Automation Engineer
+    generated    2026-10-02 (1 day)   Northwind Freight - AI Solutions Engineer
 
-  2 applications: 1 applied, 1 interviewing
+  2 applications: 1 generated, 1 not started
 
-  ↑/↓ move · enter details · s status · o open resume · n new application · r refresh · q quit
+  ↑/↓ move · enter open · n new application · d delete · , settings · q quit
 ```
 
-| Key | On the list | On an application |
-| --- | --- | --- |
-| `n` | Tailor a new application: paste a posting link or file path, answer Claude's questions, choose whether to remember the answers | |
-| `enter` | Show the application's history and files | |
-| `s` | Change status (`1`-`6` picks one), with an optional note | Same |
-| `a` | | Add a note without changing the status |
-| `o` / `c` | Open the resume PDF | Open the resume / cover letter |
-| `p` / `f` | | Open the posting / the folder |
-| `esc` | | Back (also cancels a running request) |
-| `q` | Quit | |
+**Add an application** with `n`: paste the job posting's link, or copy the whole description from the page and paste it (finish with `ctrl+s`). rezgen saves the posting right away, since postings disappear when jobs close, and suggests a name you can edit. The application starts as **not started**.
 
-Everything the app does is also available as subcommands for scripting, described below. `rezgen ui` accepts the same `-profile`, `-out`, `-model`, `-effort`, `-no-pdf` and `-env` flags as `rezgen generate`.
+**Open it** with `enter` and press `g` to generate. A checklist shows each step as it runs:
 
-## Install
+1. **Analyze.** Claude reads the posting against your profile: what the role requires, which requirements you already meet, and the gaps.
+2. **Questions.** If a true answer could close a gap (say, a tool you've used but never wrote down), you get up to 5 questions. Enter on an empty answer skips one; `esc` skips the rest. Your answers can be saved to the profile's `learned_facts`, so no later application asks again.
+3. **Write.** Claude drafts the resume and cover letter. Every line cites the profile entries or answers it came from, and rezgen rejects a draft that cites anything that doesn't exist, puts one job's accomplishment under another, lists a skill you don't have, or uses one of your `avoid_words`. It retries once with the problems listed.
+4. **PDFs.** Plain on purpose so applicant tracking systems can read them: one column, selectable Helvetica text, no tables or images.
 
-```sh
-go install github.com/Blathe/rezgen/cmd/rezgen@latest
-```
+When it's done the application shows **generated**, with clickable links to the PDFs, the folder and the posting. Then:
+
+| Key | Does |
+| --- | --- |
+| `o` / `c` | Open the resume / cover letter PDF |
+| `e` / `l` | Edit the resume / cover letter Markdown in your editor, then rebuild the PDF |
+| `v` | Show where each generated line came from |
+| `g` | Regenerate (the current documents move to `v1/`, `v2/`, ...) |
+| `t` / `p` / `f` | View the saved posting / open its link / open the folder |
+| `d` | Delete the application |
+| `esc` | Back to the list (also cancels a running request) |
+
+Contact details, job titles, dates, education and certifications are always copied straight from the profile, never retyped by the model. A generation makes two API calls; the profile is sent as a cached system prompt, so the second call reads it from the cache, and server-side fallbacks retry on another model if a safety classifier declines a request.
 
 ## Your profile
 
-Copy the example and replace it with your own history:
-
-```sh
-cp examples/profile.example.json profile.json
-rezgen validate            # checks ./profile.json
-rezgen validate -profile path/to/profile.json
-```
-
-`profile.json` is git-ignored so your details stay local.
-
-Write the profile as a superset of any one resume. Each highlight is a factual accomplishment with its own `id`, plus `metrics`, `skills` and `tags` so the right ones can be picked for each posting.
+The profile is everything rezgen knows about you. Write it as a superset of any one resume: each highlight is a factual accomplishment with its own `id`, plus `metrics`, `skills` and `tags` so the right ones can be picked for each posting. Setup can draft it for you; [`examples/profile.example.json`](examples/profile.example.json) shows the format.
 
 | Section | What goes in it |
 | --- | --- |
@@ -64,109 +71,47 @@ Write the profile as a superset of any one resume. Each highlight is a factual a
 | `projects` | Side projects and open source |
 | `skills` | Named groups of skills, e.g. `languages`, `ai` |
 | `education`, `certifications` | Credentials |
-| `cover_letter_stories` | Short paragraphs about motivation or notable wins |
+| `cover_letter_stories` | Short paragraphs about motivation or notable wins (used only in cover letters) |
 | `preferences` | Tone, page limit, words to avoid |
-| `learned_facts` | Your saved answers to rezgen's questions (filled in by `rezgen generate`; edit or delete freely) |
+| `learned_facts` | Your saved answers to rezgen's questions (edit or delete freely) |
 
-The full JSON Schema lives at [`internal/profile/profile.schema.json`](internal/profile/profile.schema.json) (also printed by `rezgen schema`). Point your editor at it with a `"$schema"` key, as the example does, to get completion and inline errors.
+The full JSON Schema is [`internal/profile/profile.schema.json`](internal/profile/profile.schema.json) (also printed by `rezgen schema`); point your editor at it with a `"$schema"` key for completion and inline errors. `rezgen validate` checks the schema plus rules a schema can't: every `id` is unique and no role ends before it starts.
 
-`rezgen validate` checks the schema plus rules a schema can't: every `id` is unique across the profile and no role ends before it starts.
+## Command line
 
-## Generate an application
-
-rezgen calls the Claude API, so it needs an API key from [console.anthropic.com](https://console.anthropic.com). Put it in a `.env` file in the folder you run rezgen from:
-
-```sh
-cp .env.example .env    # then edit .env and paste your key
-```
-
-`.env` is git-ignored. A variable already set in your shell (`export ANTHROPIC_API_KEY=...`) takes precedence over the file, and `-env path` reads a different file.
-
-Point it at the job posting's web page, or at a text file you saved it to:
+Everything the app does is also available as subcommands, for scripting. They use the settings from setup unless you pass flags; without settings they fall back to `./profile.json`, `./applications` and an `ANTHROPIC_API_KEY` from the environment or a `.env` file.
 
 ```sh
 rezgen generate -posting https://job-boards.greenhouse.io/acme/jobs/123
-rezgen generate -posting posting.txt
+rezgen generate -posting posting.txt -no-questions
+rezgen posting <url>          # show the text rezgen extracts from a page, without calling the API
+rezgen pdf path/to/resume.md  # rebuild a PDF after editing the Markdown
+rezgen list                   # list applications
+rezgen validate               # check the profile
+rezgen ui -model claude-sonnet-5-5   # open the app with one-off overrides
 ```
 
-For a URL, rezgen uses the structured job data most job boards embed for search engines (Greenhouse, Lever, Ashby and many career sites); otherwise it takes the page's visible text without navigation, headers and footers. Some sites, such as LinkedIn and Workday, build the page with JavaScript or block automated requests. rezgen tells you when it can't find the posting, and you can paste the text into a file instead. To see exactly what rezgen extracted, without calling the API:
+`generate` takes `-profile`, `-out`, `-model`, `-effort` (`low` to `max`), `-no-questions`, `-no-pdf` and `-env`. For links, rezgen uses the structured job data most boards embed (Greenhouse, Lever, Ashby and many career sites) and otherwise the page's visible text. Sites that build pages with JavaScript or block automated requests, such as LinkedIn and Workday, get a clear error: paste the text instead.
 
-```sh
-rezgen posting https://job-boards.greenhouse.io/acme/jobs/123
-```
-
-It runs in three steps:
-
-1. **Analyze.** Claude reads the posting against your profile and lists what the role requires, which requirements your profile already supports, and the gaps.
-2. **Ask.** If a true answer could close a gap (say, a tool you've used but never wrote down), rezgen asks you up to 5 questions in the terminal. Press Enter to skip any of them. Afterwards it offers to save your answers to the profile's `learned_facts`, so later applications use them as facts and never ask the same thing again. Only that section of `profile.json` is rewritten; the rest of the file is left exactly as you wrote it.
-3. **Write.** Claude drafts the resume and cover letter. Every bullet and paragraph cites the profile IDs or answers it came from. rezgen rejects a draft that cites an ID that doesn't exist, puts one role's highlight under another role, lists a skill that isn't in your profile, or uses one of your `avoid_words`. It asks once more with the problems listed, and if the second draft fails too it saves that draft as `draft-rejected.json` for you to inspect.
-
-Contact details, job titles, dates, education and certifications are copied straight from the profile, never retyped by the model.
-
-The result lands in `applications/<date>-<company>-<role>/`:
+Each application is a folder named `<date>-<name>`:
 
 | File | What it is |
 | --- | --- |
-| `resume.pdf`, `cover-letter.pdf` | The tailored documents, ready to upload |
+| `posting.md` | The posting text, with its link at the top if it came from the web |
+| `application.json` | Name, company, role and status |
+| `resume.pdf`, `cover-letter.pdf` | The tailored documents |
 | `resume.md`, `cover-letter.md` | The same documents as Markdown, for editing |
-| `sources.md` | Every generated line next to the profile IDs it cites, for checking by hand |
+| `sources.md` | Every generated line next to the profile entries it cites |
 | `analysis.json`, `answers.json`, `draft.json` | The intermediate steps |
-| `posting.md` | The posting text, with its URL at the top if it came from the web |
-
-Options:
-
-| Flag | Default | |
-| --- | --- | --- |
-| `-posting` | (required) | Posting URL, text file, or `-` to read stdin (questions are skipped) |
-| `-profile` | `profile.json` | Profile to draw from |
-| `-out` | `applications` | Where application folders go |
-| `-model` | `claude-opus-5-5` | Claude model |
-| `-effort` | `high` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and cheaper |
-| `-no-questions` | off | Skip the questions |
-| `-env` | `.env` | File to load the API key from, if it exists |
-| `-no-pdf` | off | Write Markdown only |
-
-The PDFs are plain on purpose so applicant tracking systems can parse them: one column, selectable text in Helvetica, no tables or images, US Letter. If the resume runs past your profile's `max_pages`, rezgen tells you.
-
-To change the wording, edit `resume.md` or `cover-letter.md` and rebuild the PDFs:
-
-```sh
-rezgen pdf applications/2026-10-02-acme-ai-solutions-engineer/resume.md
-```
-
-Try it on the examples: `rezgen generate -profile examples/profile.example.json -posting examples/posting.example.md`.
-
-A run makes two API calls. The profile is sent as a cached system prompt, so the second call reads it from the cache. Requests use server-side fallbacks: if a safety classifier declines a request, the API retries it on a fallback model within the same call instead of failing.
-
-## Track your applications
-
-Each application folder holds an `application.json` with its status and history, starting at `draft`. The app is the easiest way to update it; from the command line:
-
-```sh
-rezgen status northwind applied
-rezgen status northwind interviewing -note "phone screen Tuesday"
-rezgen status northwind                # show the history
-rezgen list                            # everything, newest first
-rezgen list -status applied
-```
-
-Any unique part of the folder name, company or role identifies an application. The statuses are `draft`, `applied`, `interviewing`, `offer`, `rejected` and `withdrawn`; `-date YYYY-MM-DD` backdates a change. Folders created before tracking existed show up as drafts. Delete a folder to drop an application.
-
-```
-STATUS        UPDATED              COMPANY            ROLE                   FOLDER
-interviewing  2026-10-08 (2 days)  Northwind Freight  AI Solutions Engineer  2026-10-02-northwind-freight-ai-solutions-engineer
-applied       2026-10-03 (7 days)  Acme               Automation Engineer    2026-10-03-acme-automation-engineer
-
-2 applications: 1 applied, 1 interviewing
-```
+| `v1/`, `v2/`, ... | Earlier generations |
 
 ## Roadmap
 
 1. **Foundation**: profile schema, loader, `rezgen validate` (done)
-2. **Headless pipeline**: posting intake, Claude analysis and writing, Markdown output, `rezgen generate` (done)
-3. **TUI**: Bubble Tea app for applications, intake and questions (done); draft preview and revision next
-4. **PDF and tracking**: ATS-friendly PDF export and application status tracking (done)
-5. **Polish**: recorded-response tests, demo GIF, release binaries
+2. **Headless pipeline**: posting intake, Claude analysis and writing, `rezgen generate` (done)
+3. **Interactive app**: setup, applications, generation (done); revising a draft with feedback next
+4. **PDF export** (done)
+5. **Polish**: OpenAI support, recorded-response tests, demo GIF, release binaries
 
 ## Development
 

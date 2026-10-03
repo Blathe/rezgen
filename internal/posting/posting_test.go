@@ -102,6 +102,42 @@ func TestLoadURL(t *testing.T) {
 	}
 }
 
+func TestFromInputAndSuggestName(t *testing.T) {
+	page := strings.Replace(pageWithJSONLD, "DESC", longDescription, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(page)) }))
+	defer srv.Close()
+	l := Loader{HTTP: srv.Client()}
+	ctx := context.Background()
+
+	p, err := l.FromInput(ctx, "  "+srv.URL+"/job  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Source != srv.URL+"/job" || SuggestName(p) != "Northwind Freight - AI Solutions Engineer" {
+		t.Errorf("url: %q, name %q", p.Source, SuggestName(p))
+	}
+
+	path := filepath.Join(t.TempDir(), "my posting.txt")
+	os.WriteFile(path, []byte("Senior Automation Engineer\n\nWe need..."), 0o644)
+	p, err = l.FromInput(ctx, `"`+path+`"`)
+	if err != nil || p.Source != path || SuggestName(p) != "Senior Automation Engineer" {
+		t.Errorf("file: %+v, %v", p, err)
+	}
+
+	pasted := "Back to jobs\n\nData Engineer\nAcme Corp\n" + longDescription
+	p, err = l.FromInput(ctx, pasted)
+	if err != nil || p.Source != "" || !strings.HasPrefix(p.Text, "Back to jobs") || SuggestName(p) != "Data Engineer" {
+		t.Errorf("pasted: %+v, %v", p, err)
+	}
+
+	if _, err := l.FromInput(ctx, "C:\\nope\\missing.txt"); err == nil || !strings.Contains(err.Error(), "isn't a link or a file") {
+		t.Errorf("typo path: %v", err)
+	}
+	if _, err := l.FromInput(ctx, "   "); err == nil {
+		t.Error("empty input should fail")
+	}
+}
+
 func TestLoadFileAndStdin(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "p.txt")
 	os.WriteFile(path, []byte("  file posting \n"), 0o644)

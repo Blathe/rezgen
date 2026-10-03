@@ -75,6 +75,27 @@ func setLearnedFacts(doc []byte, facts []LearnedFact) ([]byte, error) {
 	return []byte(body + ",\n  \"learned_facts\": " + value + "\n}\n"), nil
 }
 
+// Save writes p as a new profile file at path, creating its folder. It
+// refuses to overwrite an existing file.
+func Save(path string, p *Profile) error {
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // ids returns every ID used anywhere in the profile.
 func (p *Profile) ids() map[string]bool {
 	used := map[string]bool{}
