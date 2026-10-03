@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -21,7 +22,8 @@ type Anthropic struct {
 }
 
 // NewAnthropic returns a Client for model at the given effort level
-// ("low" through "max"; empty means "high").
+// ("low" through "max"; empty means "high"). Without an option.WithAPIKey,
+// the key comes from the environment.
 func NewAnthropic(model, effort string, opts ...option.RequestOption) *Anthropic {
 	if model == "" {
 		model = DefaultModel
@@ -34,6 +36,18 @@ func NewAnthropic(model, effort string, opts ...option.RequestOption) *Anthropic
 		model:  model,
 		effort: anthropic.BetaOutputConfigEffort(effort),
 	}
+}
+
+// CheckAnthropicKey makes the cheapest authenticated call (listing one
+// model) to confirm key works, so setup can catch a typo immediately.
+func CheckAnthropicKey(ctx context.Context, key string, opts ...option.RequestOption) error {
+	c := anthropic.NewClient(append([]option.RequestOption{option.WithAPIKey(key), option.WithMaxRetries(1)}, opts...)...)
+	_, err := c.Models.List(ctx, anthropic.ModelListParams{Limit: anthropic.Int(1)})
+	var apiErr *anthropic.Error
+	if errors.As(err, &apiErr) && (apiErr.StatusCode == 401 || apiErr.StatusCode == 403) {
+		return errors.New("the API rejected that key; check it at console.anthropic.com")
+	}
+	return err
 }
 
 // JSON sends req with structured output enabled, so the response text is

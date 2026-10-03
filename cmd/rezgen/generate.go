@@ -19,6 +19,7 @@ import (
 	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
 	"github.com/Blathe/rezgen/internal/tailor"
+	"github.com/Blathe/rezgen/internal/track"
 )
 
 // These are variables so tests can swap in a fake model, canned input and a
@@ -32,10 +33,10 @@ var (
 func generate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	profilePath := fs.String("profile", "profile.json", "path to the profile file")
+	profilePath := fs.String("profile", "", "path to the profile file (default: from settings, else ./profile.json)")
 	postingPath := fs.String("posting", "", "job posting: a URL, a text file, or - to read stdin (required)")
-	outDir := fs.String("out", "applications", "folder to save the application in")
-	model := fs.String("model", llm.DefaultModel, "Claude model to use")
+	outDir := fs.String("out", "", "folder to save the application in (default: from settings, else ./applications)")
+	model := fs.String("model", "", "Claude model to use (default: from settings, else "+llm.DefaultModel+")")
 	effort := fs.String("effort", "high", "effort level: low, medium, high, xhigh or max")
 	noQuestions := fs.Bool("no-questions", false, "skip the follow-up questions")
 	envFile := fs.String("env", ".env", "file to read ANTHROPIC_API_KEY and other settings from, if it exists")
@@ -51,6 +52,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	defaults(profilePath, outDir, model)
 
 	p, err := profile.Load(*profilePath)
 	if err != nil {
@@ -105,33 +107,38 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintln(stderr, "Writing the resume and cover letter...")
-	app := tailor.Application{Posting: post.Text, PostingSource: post.Source, Analysis: a, Answers: answers}
 	d, err := t.Write(ctx, post.Text, a, answers)
 	var de *tailor.DraftError
-	switch {
-	case errors.As(err, &de):
-		dir, saveErr := tailor.Save(*outDir, p, app, now())
-		if saveErr == nil {
-			saveErr = tailor.SaveRejected(dir, de)
-		}
-		fmt.Fprintln(stderr, err)
-		if saveErr != nil {
-			fmt.Fprintf(stderr, "also failed to save: %v\n", saveErr)
-		} else {
-			fmt.Fprintf(stderr, "The analysis and the rejected draft are in %s\n", dir)
-		}
-		return 1
-	case err != nil:
+	if err != nil && !errors.As(err, &de) {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	app.Draft = d
 
-	dir, err := tailor.Save(*outDir, p, app, now())
-	if err != nil {
-		fmt.Fprintf(stderr, "save: %v\n", err)
+	source := post.Source
+	if source == "stdin" {
+		source = ""
+	}
+	app, cerr := track.Create(*outDir, a.Name(), post.Text, source, now())
+	if cerr == nil {
+		cerr = tailor.WriteResults(app, p, tailor.Results{Analysis: a, Answers: answers, Draft: d}, now())
+	}
+	if de != nil {
+		if cerr == nil {
+			cerr = tailor.SaveRejected(app.Dir, de)
+		}
+		fmt.Fprintln(stderr, err)
+		if cerr != nil {
+			fmt.Fprintf(stderr, "also failed to save: %v\n", cerr)
+		} else {
+			fmt.Fprintf(stderr, "The analysis and the rejected draft are in %s\n", app.Dir)
+		}
 		return 1
 	}
+	if cerr != nil {
+		fmt.Fprintf(stderr, "save: %v\n", cerr)
+		return 1
+	}
+	dir := app.Dir
 	code := 0
 	if !*noPDF {
 		code = writePDFs(stderr, p.Preferences.MaxPages, filepath.Join(dir, "resume.md"), filepath.Join(dir, "cover-letter.md"))
@@ -144,7 +151,6 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	for _, f := range files {
 		fmt.Fprintf(stdout, "  %s\n", filepath.Join(dir, f))
 	}
-	fmt.Fprintf(stdout, "Once you've sent it: rezgen status %s applied\n", filepath.Base(dir))
 	return code
 }
 

@@ -1,0 +1,132 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contact", "headline_variants", "summary_facts", "experience", "projects", "skills", "education", "certifications", "cover_letter_stories", "notes"],
+  "$defs": {
+    "strings": {"type": "array", "items": {"type": "string"}}
+  },
+  "properties": {
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "email", "phone", "location", "links"],
+      "properties": {
+        "name": {"type": "string"},
+        "email": {"type": "string", "description": "Empty string if not given"},
+        "phone": {"type": "string"},
+        "location": {"type": "string"},
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "url"],
+            "properties": {"label": {"type": "string", "description": "e.g. linkedin, github, portfolio"}, "url": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "headline_variants": {"$ref": "#/$defs/strings"},
+    "summary_facts": {"$ref": "#/$defs/strings"},
+    "experience": {
+      "type": "array",
+      "description": "Every role, most recent first",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "company", "title", "location", "start", "end", "context", "highlights"],
+        "properties": {
+          "id": {"type": "string", "description": "lowercase-kebab-case, unique across the whole profile"},
+          "company": {"type": "string"},
+          "title": {"type": "string"},
+          "location": {"type": "string"},
+          "start": {"type": "string", "description": "YYYY-MM"},
+          "end": {"type": "string", "description": "YYYY-MM, or an empty string if this is a current role"},
+          "context": {"type": "string", "description": "One line about the company or role, or empty"},
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "text", "metrics", "skills", "tags"],
+              "properties": {
+                "id": {"type": "string"},
+                "text": {"type": "string"},
+                "metrics": {"$ref": "#/$defs/strings"},
+                "skills": {"$ref": "#/$defs/strings"},
+                "tags": {"$ref": "#/$defs/strings"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "url", "text", "skills", "tags"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "url": {"type": "string"},
+          "text": {"type": "string"},
+          "skills": {"$ref": "#/$defs/strings"},
+          "tags": {"$ref": "#/$defs/strings"}
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["group", "items"],
+        "properties": {"group": {"type": "string"}, "items": {"$ref": "#/$defs/strings"}}
+      }
+    },
+    "education": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["school", "degree", "field", "end"],
+        "properties": {
+          "school": {"type": "string"},
+          "degree": {"type": "string"},
+          "field": {"type": "string"},
+          "end": {"type": "string", "description": "YYYY or YYYY-MM, or empty"}
+        }
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "issuer", "date", "url"],
+        "properties": {
+          "name": {"type": "string"},
+          "issuer": {"type": "string"},
+          "date": {"type": "string", "description": "YYYY or YYYY-MM, or empty"},
+          "url": {"type": "string"}
+        }
+      }
+    },
+    "cover_letter_stories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "tags"],
+        "properties": {"id": {"type": "string"}, "text": {"type": "string"}, "tags": {"$ref": "#/$defs/strings"}}
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Short suggestions for the candidate: missing details worth adding (metrics, dates, links) and anything you had to guess",
+      "items": {"type": "string"}
+    }
+  }
+}

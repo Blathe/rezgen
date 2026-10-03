@@ -23,8 +23,7 @@ Usage:
   rezgen generate -posting url|file [-profile path]     tailor a resume and cover letter
   rezgen posting url|file                               print the posting text rezgen would send
   rezgen pdf file.md...                                 render Markdown (e.g. an edited resume.md) to PDF
-  rezgen list [-status s]                               list applications and where each stands
-  rezgen status <app> [status] [-note text]             show or update an application's status
+  rezgen list [-out dir]                                list applications
   rezgen schema                                         print the profile JSON Schema
 
 Run "rezgen generate -h" for all generate options.
@@ -55,8 +54,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return pdfCommand(args[1:], stdout, stderr)
 	case "list", "ls":
 		return list(args[1:], stdout, stderr)
-	case "status":
-		return status(args[1:], stdout, stderr)
 	case "schema":
 		stdout.Write(profile.Schema())
 		return 0
@@ -72,10 +69,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 func validate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	path := fs.String("profile", "profile.json", "path to the profile file")
+	path := fs.String("profile", "", "path to the profile file (default: from settings, else ./profile.json)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	defaults(path, nil, nil)
 	p, err := profile.Load(*path)
 	if err != nil {
 		var inv *profile.InvalidError

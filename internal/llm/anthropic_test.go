@@ -88,6 +88,30 @@ func TestAnthropicStopReasons(t *testing.T) {
 	}
 }
 
+func TestCheckAnthropicKey(t *testing.T) {
+	status := http.StatusOK
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.Header.Get("X-Api-Key")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			io.WriteString(w, `{"data": [], "has_more": false, "first_id": null, "last_id": null}`)
+		} else {
+			io.WriteString(w, `{"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}}`)
+		}
+	}))
+	defer srv.Close()
+
+	if err := CheckAnthropicKey(context.Background(), "sk-ant-good", option.WithBaseURL(srv.URL)); err != nil || gotKey != "sk-ant-good" {
+		t.Errorf("good key: %v (sent %q)", err, gotKey)
+	}
+	status = http.StatusUnauthorized
+	if err := CheckAnthropicKey(context.Background(), "sk-ant-bad", option.WithBaseURL(srv.URL)); err == nil || !strings.Contains(err.Error(), "rejected that key") {
+		t.Errorf("bad key: %v", err)
+	}
+}
+
 func toJSON(v any) string {
 	data, _ := json.Marshal(v)
 	return string(data)
