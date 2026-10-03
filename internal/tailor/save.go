@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/track"
 )
 
 // Application is everything produced for one posting.
@@ -54,7 +55,11 @@ func Save(root string, p *profile.Profile, app Application, on time.Time) (strin
 			return dir, err
 		}
 	}
-	return dir, nil
+	var company, role string
+	if app.Analysis != nil {
+		company, role = app.Analysis.Company, app.Analysis.Role
+	}
+	return dir, track.Save(dir, track.New(company, role, app.PostingSource, on))
 }
 
 func folderName(a *Analysis, on time.Time) string {

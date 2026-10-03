@@ -2,7 +2,7 @@
 
 rezgen tailors a resume and cover letter to a specific job posting. It keeps everything about you in one JSON profile, reads a posting, asks a few questions, and uses the Claude API to select and reword the experience that fits. It never invents facts: every line on the page traces back to the profile or your answers.
 
-> Status: Phase 2 of 5, plus PDF export. `rezgen validate` and `rezgen generate` (Markdown and PDF output) work today; the terminal UI and application tracking are coming next.
+> Status: Phases 1, 2 and 4 of 5. `rezgen generate` (Markdown and PDF output), `rezgen list` and `rezgen status` work today; the terminal UI is next.
 
 ## Install
 
@@ -107,12 +107,34 @@ Try it on the examples: `rezgen generate -profile examples/profile.example.json 
 
 A run makes two API calls. The profile is sent as a cached system prompt, so the second call reads it from the cache. Requests use server-side fallbacks: if a safety classifier declines a request, the API retries it on a fallback model within the same call instead of failing.
 
+## Track your applications
+
+Each application folder holds an `application.json` with its status and history, starting at `draft`. Update it as things move:
+
+```sh
+rezgen status northwind applied
+rezgen status northwind interviewing -note "phone screen Tuesday"
+rezgen status northwind                # show the history
+rezgen list                            # everything, newest first
+rezgen list -status applied
+```
+
+Any unique part of the folder name, company or role identifies an application. The statuses are `draft`, `applied`, `interviewing`, `offer`, `rejected` and `withdrawn`; `-date YYYY-MM-DD` backdates a change. Folders created before tracking existed show up as drafts. Delete a folder to drop an application.
+
+```
+STATUS        UPDATED              COMPANY            ROLE                   FOLDER
+interviewing  2026-10-08 (2 days)  Northwind Freight  AI Solutions Engineer  2026-10-02-northwind-freight-ai-solutions-engineer
+applied       2026-10-03 (7 days)  Acme               Automation Engineer    2026-10-03-acme-automation-engineer
+
+2 applications: 1 applied, 1 interviewing
+```
+
 ## Roadmap
 
 1. **Foundation**: profile schema, loader, `rezgen validate` (done)
 2. **Headless pipeline**: posting intake, Claude analysis and writing, Markdown output, `rezgen generate` (done)
 3. **TUI**: Bubble Tea screens for intake, questions, preview and revision
-4. **PDF and tracking**: ATS-friendly PDF export (done) and tracking each application's status
+4. **PDF and tracking**: ATS-friendly PDF export and application status tracking (done)
 5. **Polish**: recorded-response tests, demo GIF, release binaries
 
 ## Development

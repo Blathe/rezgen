@@ -231,7 +231,7 @@ func TestSave(t *testing.T) {
 	if want := filepath.Join(root, "2026-10-02-northwind-freight-ai-solutions-engineer-remote"); dir != want {
 		t.Errorf("dir %s, want %s", dir, want)
 	}
-	for _, f := range []string{"posting.md", "analysis.json", "draft.json", "resume.md", "cover-letter.md", "sources.md"} {
+	for _, f := range []string{"posting.md", "analysis.json", "draft.json", "resume.md", "cover-letter.md", "sources.md", "application.json"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("missing %s", f)
 		}

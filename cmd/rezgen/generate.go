@@ -145,6 +145,7 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	for _, f := range files {
 		fmt.Fprintf(stdout, "  %s\n", filepath.Join(dir, f))
 	}
+	fmt.Fprintf(stdout, "Once you've sent it: rezgen status %s applied\n", filepath.Base(dir))
 	return code
 }
 
