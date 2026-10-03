@@ -1,0 +1,18 @@
+{
+  "company": "Northwind Freight",
+  "role": "AI Solutions Engineer",
+  "seniority": "senior",
+  "must_have": ["Python", "LLM integration", "Working with business stakeholders"],
+  "nice_to_have": ["AWS", "Logistics domain"],
+  "keywords": ["Claude", "automation", "Python", "AWS"],
+  "responsibilities": ["Build LLM automations for operations teams"],
+  "matches": [
+    {"requirement": "LLM integration", "source_ids": ["acme-ticket-triage"]},
+    {"requirement": "Python", "source_ids": ["acme-ticket-triage", "acme-invoice-extract"]}
+  ],
+  "gaps": ["Kubernetes"],
+  "questions": [
+    {"id": "q-kubernetes", "text": "Have you deployed services on Kubernetes?", "why": "Kubernetes is listed as preferred"},
+    {"id": "q-kubernetes", "text": "How many operations staff used the triage service?", "why": "Strengthens the stakeholder match"}
+  ]
+}

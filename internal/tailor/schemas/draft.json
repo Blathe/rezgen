@@ -1,0 +1,67 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["headline", "summary", "experience", "projects", "skills", "cover_letter"],
+  "$defs": {
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "sources"],
+      "properties": {
+        "text": {"type": "string"},
+        "sources": {"type": "array", "items": {"type": "string"}, "description": "IDs of the profile entries or answers this text is drawn from"}
+      }
+    }
+  },
+  "properties": {
+    "headline": {"type": "string", "description": "One of the profile's headline_variants, or the posted title if the profile supports it"},
+    "summary": {"$ref": "#/$defs/line"},
+    "experience": {
+      "type": "array",
+      "description": "Roles to include, most recent first, using profile experience ids",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "bullets"],
+        "properties": {
+          "id": {"type": "string"},
+          "bullets": {"type": "array", "items": {"$ref": "#/$defs/line"}}
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text"],
+        "properties": {
+          "id": {"type": "string"},
+          "text": {"type": "string"}
+        }
+      }
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["group", "items"],
+        "properties": {
+          "group": {"type": "string"},
+          "items": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "cover_letter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["greeting", "paragraphs", "closing"],
+      "properties": {
+        "greeting": {"type": "string"},
+        "paragraphs": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+        "closing": {"type": "string"}
+      }
+    }
+  }
+}

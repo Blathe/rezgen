@@ -14,8 +14,11 @@ import (
 const usage = `rezgen tailors resumes and cover letters to job postings.
 
 Usage:
-  rezgen validate [-profile path]   check a profile file
-  rezgen schema                     print the profile JSON Schema
+  rezgen validate [-profile path]                  check a profile file
+  rezgen generate -posting file [-profile path]    tailor a resume and cover letter
+  rezgen schema                                    print the profile JSON Schema
+
+Run "rezgen generate -h" for all generate options.
 `
 
 func main() {
@@ -30,6 +33,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "validate":
 		return validate(args[1:], stdout, stderr)
+	case "generate":
+		return generate(args[1:], stdout, stderr)
 	case "schema":
 		stdout.Write(profile.Schema())
 		return 0
