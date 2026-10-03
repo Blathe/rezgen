@@ -125,15 +125,16 @@ type Model struct {
 	confirm confirmState
 
 	// Background work.
-	working  string
-	steps    []step
-	started  time.Time
-	workCtx  context.Context
-	cancel   context.CancelFunc
-	newPost  *posting.Posting
-	gen      genState
-	settings settingsState
-	banner   []string // shown on the application screen after generating
+	working   string
+	steps     []step
+	started   time.Time
+	workCtx   context.Context
+	cancel    context.CancelFunc
+	newPost   *posting.Posting
+	gen       genState
+	settings  settingsState
+	banner    []string // shown on the application screen after generating
+	bannerErr bool     // whether the banner reports a failure
 }
 
 // New returns the initial model: setup on first run, otherwise the list.

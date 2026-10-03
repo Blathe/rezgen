@@ -256,7 +256,7 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.typeText("Northwind - AI Solutions Engineer")
 	h.key(tea.KeyEnter)
 	h.wantScreen(scrHome)
-	h.wantView("not started", "Northwind - AI Solutions Engineer", "1 application: 0 generated, 1 not started")
+	h.wantView("not started", "Northwind - AI Solutions Engineer", "● 0 generated", "○ 1 not started")
 
 	// Open it and generate.
 	h.key(tea.KeyEnter)
@@ -273,7 +273,7 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.typeText("y")
 
 	h.wantScreen(scrApp)
-	h.wantView("Done! Your documents are ready.", "resume.pdf", "cover-letter.pdf", "Status:  generated")
+	h.wantView("Done! Your resume and cover letter are ready.", "resume.pdf", "cover-letter.pdf", "● generated")
 	a := h.m.app
 	for _, f := range []string{"resume.pdf", "cover-letter.pdf", "resume.md", "sources.md"} {
 		if !a.Has(f) {
@@ -304,14 +304,14 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.typeText("y")
 	h.key(tea.KeyEsc) // skip questions
 	h.wantScreen(scrApp)
-	h.wantView("Done!", "Earlier versions: v1")
+	h.wantView("Done!", "Earlier   v1")
 	if !a.Has(filepath.Join("v1", "resume.pdf")) || !a.Has("resume.pdf") {
 		t.Error("regenerating should keep the old version in v1/")
 	}
 
 	h.key(tea.KeyEsc)
 	h.wantScreen(scrHome)
-	h.wantView("generated", "1 generated, 0 not started")
+	h.wantView("● 1 generated", "○ 0 not started")
 
 	h.typeText("d")
 	h.wantScreen(scrConfirm)

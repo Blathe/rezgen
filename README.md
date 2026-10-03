@@ -119,3 +119,9 @@ Each application is a folder named `<date>-<name>`:
 go test ./...
 go vet ./...
 ```
+
+To check how the app's screens look without a terminal, render them in full color to an HTML page:
+
+```sh
+REZGEN_PREVIEW=preview.html go test ./internal/tui -run TestPreview
+```

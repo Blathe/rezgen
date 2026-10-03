@@ -172,15 +172,16 @@ func (m Model) settingsView() (string, string) {
 		return bold.Render("New API key") + "\n\n" + m.textIn.View(), "enter check and save · esc back"
 	}
 	path, _ := config.Path()
+	pw := m.innerWidth() - 15
 	var b strings.Builder
-	b.WriteString(bold.Render("Settings") + "\n\n")
-	row := func(label, value string) { b.WriteString(faint.Render(label) + value + "\n") }
-	row("Provider      ", string(c.Provider))
-	row("Model         ", c.Model)
-	row("API key       ", config.Mask(c.APIKey))
-	row("Profile       ", link(fileURL(m.profilePath()), m.profilePath()))
-	row("Applications  ", link(fileURL(m.appsDir()), m.appsDir()))
-	row("Settings file ", link(fileURL(path), path))
+	row := func(name, value string) { b.WriteString(label.Width(15).Render(name) + value + "\n") }
+	row("Provider", string(c.Provider))
+	row("Model", accent.Render(c.Model))
+	row("API key", config.Mask(c.APIKey))
+	b.WriteString("\n")
+	row("Profile", link(fileURL(m.profilePath()), clipPath(m.profilePath(), pw)))
+	row("Applications", link(fileURL(m.appsDir()), clipPath(m.appsDir(), pw)))
+	row("Settings file", link(fileURL(path), clipPath(path, pw)))
 	b.WriteString("\n" + faint.Render("To move your data, move the folder and change data_dir in the settings file."))
 	return b.String(), "m change model · k change API key · p open profile · f open data folder · esc back"
 }

@@ -95,44 +95,52 @@ func (m Model) appView() (string, string) {
 	if a == nil {
 		return "", ""
 	}
+	w := m.innerWidth()
 	var b strings.Builder
-	b.WriteString(bold.Render(a.Name) + "\n")
+	b.WriteString(bold.Render(clip(a.Name, w)) + "\n")
 	switch {
 	case a.Role != "" && a.Company != "":
-		b.WriteString(faint.Render(a.Role+" at "+a.Company) + "\n")
+		b.WriteString(faint.Render(clip(a.Role+" at "+a.Company, w)) + "\n")
 	case a.Role+a.Company != "":
-		b.WriteString(faint.Render(a.Role+a.Company) + "\n")
+		b.WriteString(faint.Render(clip(a.Role+a.Company, w)) + "\n")
 	}
 	b.WriteString("\n")
-	status := statusStyle(a.Status).Bold(true).Render(string(a.Status))
+	status := statusPill(a.Status)
 	if a.Status == track.Generated {
-		status += faint.Render(" on " + a.Generated)
+		status += faint.Render("  on " + a.Generated)
 	}
-	b.WriteString("Status:  " + status + "\n")
-	b.WriteString("Added:   " + a.Created + "\n")
+	b.WriteString(field("Status", status) + "\n")
+	b.WriteString(field("Added", a.Created) + "\n")
 	if strings.HasPrefix(a.Source, "http") {
-		b.WriteString("Posting: " + link(a.Source, clip(a.Source, 80)) + "\n")
+		b.WriteString(field("Posting", link(a.Source, accent.Render(clip(a.Source, w-10)))) + "\n")
 	}
-	b.WriteString("Folder:  " + link(fileURL(a.Dir), a.Dir) + "\n")
+	b.WriteString(field("Folder", link(fileURL(a.Dir), clipPath(a.Dir, w-10))) + "\n")
 
-	if len(m.banner) > 0 {
-		b.WriteString("\n" + panel.Render(strings.Join(m.banner, "\n")) + "\n")
-	}
-
-	var help string
 	if a.Status == track.Generated {
 		var files []string
 		for _, f := range []string{"resume.pdf", "cover-letter.pdf", "resume.md", "cover-letter.md", "sources.md"} {
 			if a.Has(f) {
-				files = append(files, link(fileURL(filepath.Join(a.Dir, f)), f))
+				files = append(files, link(fileURL(filepath.Join(a.Dir, f)), accent.Render(f)))
 			}
 		}
-		if len(m.banner) == 0 && len(files) > 0 {
-			b.WriteString("\nFiles:   " + strings.Join(files, faint.Render(", ")) + "\n")
+		if len(files) > 0 {
+			b.WriteString(field("Files", strings.Join(files, faint.Render("  "))) + "\n")
 		}
 		if versions := oldVersions(a); len(versions) > 0 {
-			b.WriteString(faint.Render("Earlier versions: "+strings.Join(versions, ", ")) + "\n")
+			b.WriteString(field("Earlier", faint.Render(strings.Join(versions, ", "))) + "\n")
 		}
+	}
+
+	if len(m.banner) > 0 {
+		p := okPanel
+		if m.bannerErr {
+			p = errPanel
+		}
+		b.WriteString("\n" + p.Width(w-2).Render(strings.Join(m.banner, "\n")) + "\n")
+	}
+
+	var help string
+	if a.Status == track.Generated {
 		help = "o open resume · c open cover letter · e edit resume · l edit letter · v sources\n" +
 			"g regenerate · t view posting · f folder · d delete · esc back"
 	} else {
@@ -418,24 +426,23 @@ func (m Model) finishGen(rejected *tailor.DraftError, pages int, pdfErr error) (
 	m.screen = scrApp
 	a := m.app
 	if rejected != nil {
+		m.bannerErr = true
 		m.banner = []string{
-			errStyle.Render("The draft failed the source checks twice, so no resume was made."),
+			errStyle.Bold(true).Render("✗ The draft failed the source checks twice, so no resume was made."),
 		}
 		for _, p := range rejected.Problems {
 			m.banner = append(m.banner, "  • "+p)
 		}
-		m.banner = append(m.banner, "", "The rejected draft is in "+link(fileURL(a.Dir), a.Dir)+". Press g to try again.")
+		m.banner = append(m.banner, "", faint.Render("The rejected draft is saved as draft-rejected.json in the folder above. Press g to try again."))
 		return m, m.loadApps(a.Dir)
 	}
-	m.banner = []string{okStyle.Render("Done! Your documents are ready.")}
-	for _, f := range []string{"resume.pdf", "cover-letter.pdf"} {
-		if p := filepath.Join(a.Dir, f); fileExists(p) {
-			m.banner = append(m.banner, "  "+link(fileURL(p), p))
-		}
+	m.bannerErr = false
+	m.banner = []string{
+		okStyle.Bold(true).Render("✓ Done! Your resume and cover letter are ready."),
+		"Press " + keyCap.Render("o") + " to open the resume or " + keyCap.Render("c") + " for the cover letter, or click the files above.",
 	}
-	m.banner = append(m.banner, "  Folder: "+link(fileURL(a.Dir), a.Dir))
 	if strings.HasPrefix(a.Source, "http") {
-		m.banner = append(m.banner, "  Apply:  "+link(a.Source, clip(a.Source, 70)))
+		m.banner = append(m.banner, "Apply at "+link(a.Source, accent.Render(clip(a.Source, m.innerWidth()-14))))
 	}
 	if pdfErr != nil {
 		m.banner = append(m.banner, errStyle.Render("PDF export failed: "+pdfErr.Error()))

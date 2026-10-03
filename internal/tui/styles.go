@@ -4,81 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
-	"github.com/Blathe/rezgen/internal/track"
 )
-
-var (
-	accentColor = lipgloss.AdaptiveColor{Light: "#5A3FD6", Dark: "#A08CFF"}
-	accent      = lipgloss.NewStyle().Foreground(accentColor)
-	title       = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
-	faint       = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#6B6B6B", Dark: "#8A8A8A"})
-	bold        = lipgloss.NewStyle().Bold(true)
-	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#B42318", Dark: "#FF7A70"})
-	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#067647", Dark: "#5FD49A"})
-	selected    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
-			Background(lipgloss.AdaptiveColor{Light: "#E6E0FF", Dark: "#3A2F70"})
-	panel = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(accentColor).Padding(0, 1)
-	page  = lipgloss.NewStyle().Padding(1, 2)
-)
-
-func statusStyle(s track.Status) lipgloss.Style {
-	if s == track.Generated {
-		return okStyle
-	}
-	return faint
-}
-
-// link renders text as a terminal hyperlink to url (OSC 8). Terminals that
-// don't support hyperlinks just show the text.
-func link(url, text string) string {
-	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
-}
-
-func (m Model) View() string {
-	var body, help string
-	switch m.screen {
-	case scrSetup:
-		body, help = m.setupView()
-	case scrHome:
-		body, help = m.homeView()
-	case scrNew:
-		body, help = m.newView(), "ctrl+s continue (enter works for a single link or path) · esc cancel"
-	case scrNewName:
-		body, help = m.newNameView(), "enter add application · esc cancel"
-	case scrApp:
-		body, help = m.appView()
-	case scrConfirm:
-		body, help = m.confirm.prompt, "y yes · n no"
-	case scrViewer:
-		body = bold.Render(m.confirm.viewTitle) + "\n\n" + m.viewer.View()
-		help = "↑/↓ pgup/pgdn scroll · esc back"
-	case scrWorking:
-		body, help = m.workingView(), "esc cancel"
-	case scrQuestion:
-		body, help = m.questionView(), "enter next (empty skips) · esc skip the rest"
-	case scrLearn:
-		body, help = m.learnView(), "y/enter save · n don't save"
-	case scrSettings:
-		body, help = m.settingsView()
-	}
-
-	var b strings.Builder
-	b.WriteString(title.Render("rezgen") + faint.Render("  resume and cover letter tailoring") + "\n\n")
-	b.WriteString(body)
-	b.WriteString("\n\n")
-	if m.flash != "" {
-		st := okStyle
-		if m.flashErr {
-			st = errStyle
-		}
-		b.WriteString(st.Render(m.flash) + "\n")
-	}
-	b.WriteString(faint.Render(help))
-	return page.Render(b.String())
-}
 
 // picker is a vertical list with a cursor.
 type picker struct {
@@ -148,8 +76,17 @@ func (m Model) workingView() string {
 	}
 	var b strings.Builder
 	if m.app != nil {
-		b.WriteString(bold.Render(m.app.Name) + "\n\n")
+		b.WriteString(bold.Render(clip(m.app.Name, m.innerWidth())) + "\n\n")
 	}
+	done := 0
+	for _, s := range m.steps {
+		if s.state == stepDone || s.state == stepSkipped {
+			done++
+		}
+	}
+	bar := progress.New(progress.WithScaledGradient("#7C5CFF", "#5FD49A"), progress.WithoutPercentage())
+	bar.Width = min(50, m.innerWidth())
+	b.WriteString(bar.ViewAs(float64(done)/float64(len(m.steps))) + faint.Render(fmt.Sprintf("  %d of %d", done, len(m.steps))) + "\n\n")
 	elapsed := m.cfg.Now().Sub(m.started).Round(1e9)
 	for _, s := range m.steps {
 		var mark string

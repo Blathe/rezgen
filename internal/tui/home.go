@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 
 	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/track"
@@ -54,28 +56,53 @@ func (m Model) homeView() (string, string) {
 	if len(m.apps) == 0 {
 		return "No applications yet.\n\nPress " + bold.Render("n") + " to add one: paste a job posting's link or its text.", "n new application · , settings · q quit"
 	}
-	nameW := 60
-	if m.width > 0 {
-		nameW = max(30, min(90, m.width-6-2-13-21))
-	}
-	var b strings.Builder
-	b.WriteString(faint.Render(fmt.Sprintf("  %-12s %-20s %s", "STATUS", "CREATED", "NAME")) + "\n")
+	w := m.innerWidth()
+	// Columns: marker, status, name, created. The name gets what's left.
+	const statusW, createdW = 15, 19
+	nameW := max(20, w-2-statusW-createdW-6)
 
 	start, end := 0, len(m.apps)
-	if rows := m.height - 10; m.height > 0 && rows > 3 && len(m.apps) > rows {
+	if rows := m.height - 16; m.height > 0 && rows > 3 && len(m.apps) > rows {
 		start = max(0, min(m.cursor-rows/2, len(m.apps)-rows))
 		end = start + rows
 	}
+	t := table.New().
+		Border(lipgloss.NormalBorder()).
+		BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
+		BorderColumn(false).BorderRow(false).BorderHeader(true).
+		BorderStyle(lipgloss.NewStyle().Foreground(subtleColor)).
+		Headers("", "STATUS", "NAME", "CREATED").
+		StyleFunc(func(row, col int) lipgloss.Style {
+			s := lipgloss.NewStyle().PaddingRight(2)
+			if col == 0 {
+				s = lipgloss.NewStyle().Width(2)
+			}
+			if row == table.HeaderRow {
+				return s.Foreground(mutedColor).Bold(true)
+			}
+			if start+row == m.cursor {
+				return s.Background(selectBg).Foreground(textColor).Bold(true)
+			}
+			return s
+		})
 	for i := start; i < end; i++ {
 		a := m.apps[i]
-		status := fmt.Sprintf("%-12s", a.Status)
-		rest := fmt.Sprintf(" %-20s %s", track.Age(a.Created, m.cfg.Now()), clip(a.Name, nameW))
+		created := track.Age(a.Created, m.cfg.Now())
 		if i == m.cursor {
-			b.WriteString(accent.Render("▸ ") + selected.Render(status+rest) + "\n")
-		} else {
-			b.WriteString("  " + statusStyle(a.Status).Render(status) + rest + "\n")
+			// Plain text, so the row's highlight isn't interrupted by the
+			// cells' own colors.
+			icon := "○ "
+			if a.Status == track.Generated {
+				icon = "● "
+			}
+			t.Row("▸", icon+string(a.Status), clip(a.Name, nameW), created)
+			continue
 		}
+		t.Row(" ", statusPill(a.Status), clip(a.Name, nameW), faint.Render(created))
 	}
+
+	var b strings.Builder
+	b.WriteString(t.Render() + "\n")
 	if start > 0 || end < len(m.apps) {
 		b.WriteString(faint.Render(fmt.Sprintf("  %d-%d of %d", start+1, end, len(m.apps))) + "\n")
 	}
@@ -85,10 +112,9 @@ func (m Model) homeView() (string, string) {
 			generated++
 		}
 	}
-	b.WriteString(fmt.Sprintf("\n%s: %s, %s",
-		plural(len(m.apps), "application"),
-		okStyle.Render(fmt.Sprintf("%d generated", generated)),
-		faint.Render(fmt.Sprintf("%d not started", len(m.apps)-generated))))
+	b.WriteString("\n" + faint.Render(plural(len(m.apps), "application")+"   ") +
+		pill(fmt.Sprintf("● %d generated", generated), okColor) + "   " +
+		pill(fmt.Sprintf("○ %d not started", len(m.apps)-generated), mutedColor))
 	return b.String(), help
 }
 
@@ -211,8 +237,7 @@ func (m Model) newNameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) newView() string {
-	return bold.Render("New application") + "\n" +
-		faint.Render("Paste the job posting's link, or copy the whole job description from the page and paste it here.") + "\n\n" +
+	return faint.Render("Paste the job posting's link, or copy the whole job description from the page and paste it here.") + "\n\n" +
 		m.area.View()
 }
 

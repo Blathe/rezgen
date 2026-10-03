@@ -373,7 +373,36 @@ func (m Model) finishSetup(msg string) (tea.Model, tea.Cmd) {
 	return m, m.loadApps("")
 }
 
+// setupTracker shows where setup is: API key ─ Model ─ Data folder ─ Profile.
+func setupTracker(step setupStep) string {
+	cur := map[setupStep]int{
+		stepKey: 0, stepModel: 1, stepModelOther: 1, stepDataDir: 2,
+		stepProfile: 3, stepProfilePaste: 3, stepProfilePath: 3, stepProfileReview: 3,
+	}
+	i, ok := cur[step]
+	if !ok {
+		return ""
+	}
+	var parts []string
+	for n, name := range []string{"API key", "Model", "Data folder", "Profile"} {
+		switch {
+		case n < i:
+			parts = append(parts, okStyle.Render("✓ "+name))
+		case n == i:
+			parts = append(parts, accent.Bold(true).Render("● "+name))
+		default:
+			parts = append(parts, faint.Render("○ "+name))
+		}
+	}
+	return strings.Join(parts, faint.Render(" ─── ")) + "\n\n"
+}
+
 func (m Model) setupView() (string, string) {
+	body, help := m.setupBody()
+	return setupTracker(m.setup.step) + body, help
+}
+
+func (m Model) setupBody() (string, string) {
 	s := m.setup
 	var b strings.Builder
 	switch s.step {
