@@ -42,11 +42,13 @@ The full JSON Schema lives at [`internal/profile/profile.schema.json`](internal/
 
 ## Generate an application
 
-rezgen calls the Claude API, so set an API key first (from [console.anthropic.com](https://console.anthropic.com)):
+rezgen calls the Claude API, so it needs an API key from [console.anthropic.com](https://console.anthropic.com). Put it in a `.env` file in the folder you run rezgen from:
 
 ```sh
-export ANTHROPIC_API_KEY=sk-ant-...        # PowerShell: $env:ANTHROPIC_API_KEY = "sk-ant-..."
+cp .env.example .env    # then edit .env and paste your key
 ```
+
+`.env` is git-ignored. A variable already set in your shell (`export ANTHROPIC_API_KEY=...`) takes precedence over the file, and `-env path` reads a different file.
 
 Save the job posting as a text file, then:
 
@@ -81,6 +83,7 @@ Options:
 | `-model` | `claude-opus-5-5` | Claude model |
 | `-effort` | `high` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and cheaper |
 | `-no-questions` | off | Skip the questions |
+| `-env` | `.env` | File to load the API key from, if it exists |
 
 Try it on the examples: `rezgen generate -profile examples/profile.example.json -posting examples/posting.example.md`.
 

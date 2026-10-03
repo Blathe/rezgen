@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Blathe/rezgen/internal/dotenv"
 	"github.com/Blathe/rezgen/internal/llm"
 	"github.com/Blathe/rezgen/internal/profile"
 	"github.com/Blathe/rezgen/internal/tailor"
@@ -36,12 +37,17 @@ func generate(args []string, stdout, stderr io.Writer) int {
 	model := fs.String("model", llm.DefaultModel, "Claude model to use")
 	effort := fs.String("effort", "high", "effort level: low, medium, high, xhigh or max")
 	noQuestions := fs.Bool("no-questions", false, "skip the follow-up questions")
+	envFile := fs.String("env", ".env", "file to read ANTHROPIC_API_KEY and other settings from, if it exists")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *postingPath == "" {
 		fmt.Fprintln(stderr, "generate: -posting is required (a file path, or - for stdin)")
 		return 2
+	}
+	if err := dotenv.Load(*envFile); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
 	}
 
 	p, err := profile.Load(*profilePath)
