@@ -3,8 +3,8 @@
   "additionalProperties": false,
   "required": ["company", "role", "seniority", "must_have", "nice_to_have", "keywords", "responsibilities", "matches", "gaps", "questions"],
   "properties": {
-    "company": {"type": "string", "description": "Hiring company name, or empty if the posting doesn't say"},
-    "role": {"type": "string", "description": "Job title as posted"},
+    "company": {"type": "string", "description": "Hiring company name only (e.g. \"Suffolk\"), or an empty string if the posting doesn't say"},
+    "role": {"type": "string", "description": "Job title exactly as posted. If the posting gives no title, a plain title of at most 5 words, such as \"AI Engineer\". Never an explanation."},
     "seniority": {"type": "string", "description": "e.g. junior, mid, senior, staff, lead"},
     "must_have": {"type": "array", "items": {"type": "string"}, "description": "Required skills and qualifications"},
     "nice_to_have": {"type": "array", "items": {"type": "string"}, "description": "Preferred or bonus qualifications"},

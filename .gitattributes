@@ -1,0 +1,3 @@
+# Check out with LF line endings on every OS, so gofmt (which rejects CRLF)
+# passes locally on Windows the same as in CI.
+* text=auto eol=lf

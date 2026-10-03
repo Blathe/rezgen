@@ -17,10 +17,14 @@ import (
 const usage = `rezgen tailors resumes and cover letters to job postings.
 
 Usage:
+  rezgen                                                open the interactive app (same as rezgen ui)
+  rezgen ui [-profile path] [-out dir]                  open the interactive app
   rezgen validate [-profile path]                       check a profile file
   rezgen generate -posting url|file [-profile path]     tailor a resume and cover letter
   rezgen posting url|file                               print the posting text rezgen would send
   rezgen pdf file.md...                                 render Markdown (e.g. an edited resume.md) to PDF
+  rezgen list [-status s]                               list applications and where each stands
+  rezgen status <app> [status] [-note text]             show or update an application's status
   rezgen schema                                         print the profile JSON Schema
 
 Run "rezgen generate -h" for all generate options.
@@ -32,10 +36,15 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
-		return 2
+		if !isTerminal() {
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		return ui(nil, stdout, stderr)
 	}
 	switch args[0] {
+	case "ui":
+		return ui(args[1:], stdout, stderr)
 	case "validate":
 		return validate(args[1:], stdout, stderr)
 	case "generate":
@@ -44,6 +53,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return showPosting(args[1:], stdout, stderr)
 	case "pdf":
 		return pdfCommand(args[1:], stdout, stderr)
+	case "list", "ls":
+		return list(args[1:], stdout, stderr)
+	case "status":
+		return status(args[1:], stdout, stderr)
 	case "schema":
 		stdout.Write(profile.Schema())
 		return 0

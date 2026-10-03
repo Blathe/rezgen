@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Blathe/rezgen/internal/profile"
+	"github.com/Blathe/rezgen/internal/track"
 )
 
 // Application is everything produced for one posting.
@@ -54,7 +55,21 @@ func Save(root string, p *profile.Profile, app Application, on time.Time) (strin
 			return dir, err
 		}
 	}
-	return dir, nil
+	var company, role string
+	if app.Analysis != nil {
+		company, role = app.Analysis.Company, app.Analysis.Role
+	}
+	return dir, track.Save(dir, track.New(company, role, app.PostingSource, on))
+}
+
+// SaveRejected writes a draft that failed the source checks, with the
+// problems found, to dir/draft-rejected.json for inspection.
+func SaveRejected(dir string, de *DraftError) error {
+	data := toJSON(struct {
+		Problems []string `json:"problems"`
+		Draft    *Draft   `json:"draft"`
+	}{de.Problems, de.Draft})
+	return os.WriteFile(filepath.Join(dir, "draft-rejected.json"), []byte(data), 0o644)
 }
 
 func folderName(a *Analysis, on time.Time) string {

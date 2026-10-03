@@ -2,7 +2,38 @@
 
 rezgen tailors a resume and cover letter to a specific job posting. It keeps everything about you in one JSON profile, reads a posting, asks a few questions, and uses the Claude API to select and reword the experience that fits. It never invents facts: every line on the page traces back to the profile or your answers.
 
-> Status: Phase 2 of 5, plus PDF export. `rezgen validate` and `rezgen generate` (Markdown and PDF output) work today; the terminal UI and application tracking are coming next.
+> Status: Phases 1-4 of 5. The interactive app, generation with PDF output and application tracking all work today.
+
+## Quick start
+
+1. Install rezgen and create your profile (below).
+2. Put your Claude API key in `.env` (see [Generate an application](#generate-an-application)).
+3. Run `rezgen` with no arguments to open the app:
+
+```
+  rezgen  resume and cover letter tailoring
+
+    STATUS        UPDATED              COMPANY                ROLE
+  ▸ interviewing  2026-10-08 (2 days)  Northwind Freight      AI Solutions Engineer
+    applied       2026-10-03 (7 days)  Acme                   Automation Engineer
+
+  2 applications: 1 applied, 1 interviewing
+
+  ↑/↓ move · enter details · s status · o open resume · n new application · r refresh · q quit
+```
+
+| Key | On the list | On an application |
+| --- | --- | --- |
+| `n` | Tailor a new application: paste a posting link or file path, answer Claude's questions, choose whether to remember the answers | |
+| `enter` | Show the application's history and files | |
+| `s` | Change status (`1`-`6` picks one), with an optional note | Same |
+| `a` | | Add a note without changing the status |
+| `o` / `c` | Open the resume PDF | Open the resume / cover letter |
+| `p` / `f` | | Open the posting / the folder |
+| `esc` | | Back (also cancels a running request) |
+| `q` | Quit | |
+
+Everything the app does is also available as subcommands for scripting, described below. `rezgen ui` accepts the same `-profile`, `-out`, `-model`, `-effort`, `-no-pdf` and `-env` flags as `rezgen generate`.
 
 ## Install
 
@@ -107,12 +138,34 @@ Try it on the examples: `rezgen generate -profile examples/profile.example.json 
 
 A run makes two API calls. The profile is sent as a cached system prompt, so the second call reads it from the cache. Requests use server-side fallbacks: if a safety classifier declines a request, the API retries it on a fallback model within the same call instead of failing.
 
+## Track your applications
+
+Each application folder holds an `application.json` with its status and history, starting at `draft`. The app is the easiest way to update it; from the command line:
+
+```sh
+rezgen status northwind applied
+rezgen status northwind interviewing -note "phone screen Tuesday"
+rezgen status northwind                # show the history
+rezgen list                            # everything, newest first
+rezgen list -status applied
+```
+
+Any unique part of the folder name, company or role identifies an application. The statuses are `draft`, `applied`, `interviewing`, `offer`, `rejected` and `withdrawn`; `-date YYYY-MM-DD` backdates a change. Folders created before tracking existed show up as drafts. Delete a folder to drop an application.
+
+```
+STATUS        UPDATED              COMPANY            ROLE                   FOLDER
+interviewing  2026-10-08 (2 days)  Northwind Freight  AI Solutions Engineer  2026-10-02-northwind-freight-ai-solutions-engineer
+applied       2026-10-03 (7 days)  Acme               Automation Engineer    2026-10-03-acme-automation-engineer
+
+2 applications: 1 applied, 1 interviewing
+```
+
 ## Roadmap
 
 1. **Foundation**: profile schema, loader, `rezgen validate` (done)
 2. **Headless pipeline**: posting intake, Claude analysis and writing, Markdown output, `rezgen generate` (done)
-3. **TUI**: Bubble Tea screens for intake, questions, preview and revision
-4. **PDF and tracking**: ATS-friendly PDF export (done) and tracking each application's status
+3. **TUI**: Bubble Tea app for applications, intake and questions (done); draft preview and revision next
+4. **PDF and tracking**: ATS-friendly PDF export and application status tracking (done)
 5. **Polish**: recorded-response tests, demo GIF, release binaries
 
 ## Development
