@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/Blathe/rezgen/internal/pdf"
 	"github.com/Blathe/rezgen/internal/posting"
 	"github.com/Blathe/rezgen/internal/profile"
 )
@@ -19,6 +20,7 @@ Usage:
   rezgen validate [-profile path]                       check a profile file
   rezgen generate -posting url|file [-profile path]     tailor a resume and cover letter
   rezgen posting url|file                               print the posting text rezgen would send
+  rezgen pdf file.md...                                 render Markdown (e.g. an edited resume.md) to PDF
   rezgen schema                                         print the profile JSON Schema
 
 Run "rezgen generate -h" for all generate options.
@@ -40,6 +42,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return generate(args[1:], stdout, stderr)
 	case "posting":
 		return showPosting(args[1:], stdout, stderr)
+	case "pdf":
+		return pdfCommand(args[1:], stdout, stderr)
 	case "schema":
 		stdout.Write(profile.Schema())
 		return 0
@@ -76,6 +80,32 @@ func validate(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "%s is valid: %d roles, %d highlights, %d projects, %d certifications\n",
 		*path, len(p.Experience), highlights, len(p.Projects), len(p.Certifications))
 	return 0
+}
+
+// pdfCommand re-renders Markdown files to PDF, for after hand edits.
+func pdfCommand(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: rezgen pdf file.md...")
+		return 2
+	}
+	code := 0
+	for _, path := range args {
+		out, pages, err := pdf.ConvertFile(path)
+		if err != nil {
+			fmt.Fprintf(stderr, "pdf %s: %v\n", path, err)
+			code = 1
+			continue
+		}
+		fmt.Fprintf(stdout, "%s (%d page%s)\n", out, pages, plural(pages))
+	}
+	return code
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // showPosting prints the text extracted from a posting, so a URL can be

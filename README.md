@@ -2,7 +2,7 @@
 
 rezgen tailors a resume and cover letter to a specific job posting. It keeps everything about you in one JSON profile, reads a posting, asks a few questions, and uses the Claude API to select and reword the experience that fits. It never invents facts: every line on the page traces back to the profile or your answers.
 
-> Status: Phase 2 of 5. `rezgen validate` and `rezgen generate` (Markdown output) work today; the terminal UI and PDF export are coming next.
+> Status: Phase 2 of 5, plus PDF export. `rezgen validate` and `rezgen generate` (Markdown and PDF output) work today; the terminal UI and application tracking are coming next.
 
 ## Install
 
@@ -75,7 +75,8 @@ The result lands in `applications/<date>-<company>-<role>/`:
 
 | File | What it is |
 | --- | --- |
-| `resume.md`, `cover-letter.md` | The tailored documents |
+| `resume.pdf`, `cover-letter.pdf` | The tailored documents, ready to upload |
+| `resume.md`, `cover-letter.md` | The same documents as Markdown, for editing |
 | `sources.md` | Every generated line next to the profile IDs it cites, for checking by hand |
 | `analysis.json`, `answers.json`, `draft.json` | The intermediate steps |
 | `posting.md` | The posting text, with its URL at the top if it came from the web |
@@ -91,6 +92,15 @@ Options:
 | `-effort` | `high` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and cheaper |
 | `-no-questions` | off | Skip the questions |
 | `-env` | `.env` | File to load the API key from, if it exists |
+| `-no-pdf` | off | Write Markdown only |
+
+The PDFs are plain on purpose so applicant tracking systems can parse them: one column, selectable text in Helvetica, no tables or images, US Letter. If the resume runs past your profile's `max_pages`, rezgen tells you.
+
+To change the wording, edit `resume.md` or `cover-letter.md` and rebuild the PDFs:
+
+```sh
+rezgen pdf applications/2026-10-02-acme-ai-solutions-engineer/resume.md
+```
 
 Try it on the examples: `rezgen generate -profile examples/profile.example.json -posting examples/posting.example.md`.
 
@@ -101,7 +111,7 @@ A run makes two API calls. The profile is sent as a cached system prompt, so the
 1. **Foundation**: profile schema, loader, `rezgen validate` (done)
 2. **Headless pipeline**: posting intake, Claude analysis and writing, Markdown output, `rezgen generate` (done)
 3. **TUI**: Bubble Tea screens for intake, questions, preview and revision
-4. **PDF and tracking**: ATS-friendly PDF export and a saved folder per application
+4. **PDF and tracking**: ATS-friendly PDF export (done) and tracking each application's status
 5. **Polish**: recorded-response tests, demo GIF, release binaries
 
 ## Development

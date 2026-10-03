@@ -104,7 +104,7 @@ func RenderResume(p *profile.Profile, d *Draft) string {
 // RenderCoverLetter returns the cover letter as Markdown, dated on.
 func RenderCoverLetter(p *profile.Profile, d *Draft, on time.Time) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n\n%s\n\n", p.Contact.Name, contactLine(p.Contact))
+	fmt.Fprintf(&b, "# %s\n\n%s\n\n", p.Contact.Name, contactLine(p.Contact))
 	fmt.Fprintf(&b, "%s\n\n", on.Format("January 2, 2006"))
 	if d.CoverLetter.Greeting != "" {
 		fmt.Fprintf(&b, "%s\n\n", d.CoverLetter.Greeting)

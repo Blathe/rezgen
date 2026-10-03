@@ -70,6 +70,12 @@ func TestGenerate(t *testing.T) {
 	if !strings.Contains(string(resume), "# Jordan Example") {
 		t.Errorf("unexpected resume:\n%s", resume)
 	}
+	for _, f := range []string{"resume.pdf", "cover-letter.pdf"} {
+		data, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil || !bytes.HasPrefix(data, []byte("%PDF-")) {
+			t.Errorf("%s missing or not a PDF: %v", f, err)
+		}
+	}
 	answers, err := os.ReadFile(filepath.Join(dir, "answers.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +97,34 @@ func TestGenerateNoQuestions(t *testing.T) {
 	}
 	if strings.Contains(fake.Requests[1].Prompt, "<answers>") {
 		t.Error("answers sent despite -no-questions")
+	}
+}
+
+func TestGenerateNoPDF(t *testing.T) {
+	useFake(t, "", analysisFixture, draftFixture)
+	out := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "-profile", exampleProfile, "-posting", writePosting(t), "-out", out, "-no-questions", "-no-pdf"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "2026-10-02-northwind-freight-ai-solutions-engineer", "resume.pdf")); err == nil {
+		t.Error("resume.pdf written despite -no-pdf")
+	}
+}
+
+func TestPDFCommand(t *testing.T) {
+	md := filepath.Join(t.TempDir(), "resume.md")
+	os.WriteFile(md, []byte("# Jordan Example\n\n- One bullet\n"), 0o644)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"pdf", md}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "resume.pdf (1 page)") {
+		t.Errorf("unexpected output: %s", stdout.String())
+	}
+	if code := run([]string{"pdf", "missing.md"}, &stdout, &stderr); code != 1 {
+		t.Errorf("missing file: exit %d, want 1", code)
 	}
 }
 
