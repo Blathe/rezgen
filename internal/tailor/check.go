@@ -231,6 +231,21 @@ func (c *catalog) checkResume(d *Draft) findings {
 	if len(d.Skills) > 5 {
 		f.warn("there are %d skill groups; use 3 or 4", len(d.Skills))
 	}
+	for _, g := range d.Skills {
+		for _, s := range g.Items {
+			if pseudoSkill.MatchString(s) {
+				f.warn("skill %q isn't something a recruiter searches for; leave out in-house systems and practices", s)
+			}
+		}
+	}
+	if len(d.Projects) == 0 && len(c.profile.Projects) > 0 {
+		f.warn("the resume has no projects, but the profile has %d; include the ones relevant to this posting", len(c.profile.Projects))
+	}
+	if limit := c.profile.Preferences.MaxPages; limit > 0 {
+		if words := resumeWords(d); words > 430*limit {
+			f.warn("the resume is about %d words, which runs past the %d-page limit (about %d words); cut the weakest bullets", words, limit, 430*limit)
+		}
+	}
 	c.avoidWords(&f, d.resumeTexts())
 	return f
 }
@@ -361,6 +376,21 @@ func clip(s string, n int) string {
 		return s
 	}
 	return string(r[:n-3]) + "..."
+}
+
+var pseudoSkill = regexp.MustCompile(`(?i)^(custom|in-house|internal|proprietary)\b|\b(cms|erp)$|^(tests?|ci checks?|validation( guardrails)?)$`)
+
+// resumeWords estimates the resume's length: the drafted text plus the
+// lines rendered from the profile (titles, dates, education).
+func resumeWords(d *Draft) int {
+	n := 0
+	for _, t := range d.resumeTexts() {
+		n += len(strings.Fields(t))
+	}
+	for _, g := range d.Skills {
+		n += 1 + len(g.Items)
+	}
+	return n + 12*len(d.Experience) + 40 // headings, role lines, contact, education
 }
 
 // resumeTexts returns every piece of prose on the resume.

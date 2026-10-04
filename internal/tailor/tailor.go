@@ -205,7 +205,7 @@ func (t *Tailor) attempt(ctx context.Context, what, prompt string, schema map[st
 	var f findings
 	for n := 1; n <= maxAttempts; n++ {
 		p := prompt
-		if n > 1 {
+		if n > 1 && len(f.problems)+len(f.warnings) > 0 {
 			p = retryPrompt(prompt, out, f.problems, f.warnings)
 		}
 		data, err := t.LLM.JSON(ctx, llm.Request{System: t.system, Prompt: p, Schema: schema, MaxTokens: 16000})
@@ -217,6 +217,11 @@ func (t *Tailor) attempt(ctx context.Context, what, prompt string, schema map[st
 			return nil, fmt.Errorf("%s: decode response: %w", what, err)
 		}
 		if empty() {
+			// Occasionally the model returns a valid but empty object. It's
+			// intermittent, so ask once more with the original prompt.
+			if n < maxAttempts {
+				continue
+			}
 			return nil, errEmpty(strings.TrimPrefix(what, "write "))
 		}
 		f = check()
@@ -256,9 +261,8 @@ func dedupeQuestionIDs(qs []Question) {
 	}
 }
 
-// errEmpty reports a structurally valid but empty response. Retrying
-// immediately tends to get the same, so it's an error rather than a check
-// failure.
+// errEmpty reports a structurally valid but empty response that came back
+// empty twice.
 func errEmpty(what string) error {
 	return fmt.Errorf("Claude returned an empty %s. This happens occasionally; wait a few minutes and generate again, or pick another model in settings", what)
 }

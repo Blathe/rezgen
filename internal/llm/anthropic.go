@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -102,6 +103,13 @@ func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 	}
 	if hasPrefix(a.model, effortModels) {
 		params.OutputConfig.Effort = a.effort
+		if os.Getenv("REZGEN_DEBUG_DIR") != "" {
+			// Ask for a readable summary of the model's reasoning, so the
+			// debug log shows why it answered as it did.
+			params.Thinking = anthropic.BetaThinkingConfigParamUnion{
+				OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized},
+			}
+		}
 	}
 	if a.Fallbacks && hasPrefix(a.model, fallbackModels) {
 		params.Fallbacks = anthropic.BetaFallbacksParamUnion{OfDefault: constant.ValueOf[constant.Default]()}

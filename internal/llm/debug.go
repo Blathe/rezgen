@@ -28,8 +28,11 @@ func debugLog(req Request, msg *anthropic.BetaMessage) {
 	var blocks []block
 	for _, b := range msg.Content {
 		bl := block{Type: b.Type}
-		if t, ok := b.AsAny().(anthropic.BetaTextBlock); ok {
-			bl.Text = t.Text
+		switch v := b.AsAny().(type) {
+		case anthropic.BetaTextBlock:
+			bl.Text = v.Text
+		case anthropic.BetaThinkingBlock:
+			bl.Text = v.Thinking
 		}
 		blocks = append(blocks, bl)
 	}

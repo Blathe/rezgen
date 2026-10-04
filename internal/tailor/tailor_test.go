@@ -177,7 +177,7 @@ func TestLetterStyleWarningsRetryThenStick(t *testing.T) {
 
 func TestCheckResume(t *testing.T) {
 	p := loadProfile(t)
-	answers := []Answer{{QuestionID: "q-team-size", Text: "12 people"}}
+	answers := []Answer{{QuestionID: "q-team-size", Text: "12 people, working in our Custom ERP"}}
 	problems := []struct {
 		name   string
 		mutate func(d *Draft)
@@ -217,6 +217,13 @@ func TestCheckResume(t *testing.T) {
 		{"tenure summary", func(d *Draft) { d.Summary.Text = "Spent nearly 8 years building internal tools." }, "leads with tenure"},
 		{"repeated verb", func(d *Draft) { d.Experience[0].Bullets[1].Text = "Built an invoice extraction workflow." }, `more than one bullet with "built"`},
 		{"project name", func(d *Draft) { d.Projects[0].Text = "rezgen: a Go CLI." }, "repeats the project's name"},
+		{"no projects", func(d *Draft) { d.Projects = nil }, "has no projects"},
+		{"pseudo-skill", func(d *Draft) { d.Skills[0].Items = append(d.Skills[0].Items, "Custom ERP") }, "isn't something a recruiter searches for"},
+		{"too long", func(d *Draft) {
+			for i := 0; i < 30; i++ {
+				d.Experience[0].Bullets = append(d.Experience[0].Bullets, Line{Text: "Automated invoice data entry with document extraction and a review queue.", Sources: []string{"acme-invoice-extract"}})
+			}
+		}, "runs past the 1-page limit"},
 	}
 	for _, tt := range warnings {
 		t.Run(tt.name, func(t *testing.T) {
@@ -408,10 +415,20 @@ func TestEmptyResponsesAreErrors(t *testing.T) {
 	}
 
 	hollow := `{"headline": "", "summary": {"text": "", "sources": []}, "experience": [{"id": "__drop__", "brief": false, "bullets": []}], "projects": [], "skills": []}`
-	fake = &llmtest.Fake{Responses: [][]byte{[]byte(hollow)}}
+	fake = &llmtest.Fake{Responses: [][]byte{[]byte(hollow), []byte(hollow)}}
 	tl, _ = New(fake, loadProfile(t))
 	_, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil)
-	if err == nil || !strings.Contains(err.Error(), "empty resume") || len(fake.Requests) != 1 {
-		t.Errorf("want an empty-resume error without a retry, got %v after %d calls", err, len(fake.Requests))
+	if err == nil || !strings.Contains(err.Error(), "empty resume") || len(fake.Requests) != 2 {
+		t.Errorf("want an empty-resume error after one plain retry, got %v after %d calls", err, len(fake.Requests))
+	}
+	if fake.Requests[1].Prompt != fake.Requests[0].Prompt {
+		t.Error("an empty response should be retried with the original prompt")
+	}
+
+	// One empty response followed by a good one recovers.
+	fake = &llmtest.Fake{Responses: [][]byte{[]byte(hollow), readFile(t, "testdata/draft.json"), readFile(t, "testdata/cover_letter.json")}}
+	tl, _ = New(fake, loadProfile(t))
+	if _, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil); err != nil {
+		t.Errorf("want recovery after one empty response, got %v", err)
 	}
 }
