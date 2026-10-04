@@ -1,7 +1,7 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["headline", "summary", "experience", "projects", "skills", "cover_letter"],
+  "required": ["headline", "summary", "experience", "projects", "skills"],
   "$defs": {
     "line": {
       "type": "object",
@@ -18,13 +18,14 @@
     "summary": {"$ref": "#/$defs/line"},
     "experience": {
       "type": "array",
-      "description": "Roles to include, most recent first, using profile experience ids",
+      "description": "Every role in the profile, most recent first, using profile experience ids",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "bullets"],
+        "required": ["id", "brief", "bullets"],
         "properties": {
           "id": {"type": "string"},
+          "brief": {"type": "boolean", "description": "true for an old, unrelated role shown as one line under Earlier experience, with no bullets"},
           "bullets": {"type": "array", "items": {"$ref": "#/$defs/line"}}
         }
       }
@@ -37,12 +38,13 @@
         "required": ["id", "text"],
         "properties": {
           "id": {"type": "string"},
-          "text": {"type": "string"}
+          "text": {"type": "string", "description": "One sentence about what it does and why it's notable. Don't repeat the project name; it's shown automatically."}
         }
       }
     },
     "skills": {
       "type": "array",
+      "description": "3 or 4 groups",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -51,16 +53,6 @@
           "group": {"type": "string"},
           "items": {"type": "array", "items": {"type": "string"}}
         }
-      }
-    },
-    "cover_letter": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["greeting", "paragraphs", "closing"],
-      "properties": {
-        "greeting": {"type": "string"},
-        "paragraphs": {"type": "array", "items": {"$ref": "#/$defs/line"}},
-        "closing": {"type": "string"}
       }
     }
   }

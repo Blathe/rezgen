@@ -1,0 +1,22 @@
+{
+  "greeting": "Dear Northwind Freight hiring team,",
+  "paragraphs": [
+    {
+      "text": "Northwind is hiring its first AI Solutions Engineer to take manual work off its operations, finance and support teams. Most of my best work started as a conversation with someone in operations, not a ticket, so a role that begins with those conversations is the one I want.",
+      "sources": ["why-solutions"]
+    },
+    {
+      "text": "At Acme Logistics, support tickets arrived faster than anyone could decide who should answer them. The slow part wasn't the answer; it was the sorting. So I built a Claude-based triage service that reads each ticket and routes it to the right team, about 1,200 a week now, and first responses got 40% faster. That kind of quiet bottleneck is usually where automation pays off first.",
+      "sources": ["acme-ticket-triage"]
+    },
+    {
+      "text": "Finance had a similar story. Invoice data was typed in by hand, so I automated the entry with document extraction and kept a human review queue in the loop. It saved 30 hours a week, and nobody had to trust a black box to get there. That balance between automation and a person checking the edge cases is how I'd approach your finance work as well.",
+      "sources": ["acme-invoice-extract"]
+    },
+    {
+      "text": "I'd like to hear which of your teams is carrying the most manual work right now, and talk through where I'd start.",
+      "sources": []
+    }
+  ],
+  "closing": "Sincerely,"
+}

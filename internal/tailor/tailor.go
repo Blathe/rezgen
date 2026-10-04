@@ -1,8 +1,9 @@
 // Package tailor turns a profile and a job posting into a tailored resume and
-// cover letter. It runs in two model calls: Analyze reads the posting against
-// the profile and lists questions for the candidate, then Write drafts the
-// documents. Every drafted line cites the profile entries (or answers) it came
-// from, and Write rejects a draft that cites anything that doesn't exist.
+// cover letter. Analyze reads the posting against the profile and lists
+// questions for the candidate; Write then drafts the resume and, in a second
+// call that sees the finished resume, the cover letter. Every factual line
+// cites the profile entries (or answers) it came from, and Write rejects a
+// draft that cites anything that doesn't exist.
 package tailor
 
 import (
@@ -10,6 +11,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/Blathe/rezgen/internal/llm"
@@ -21,9 +23,12 @@ var (
 	analysisSchemaJSON []byte
 	//go:embed schemas/draft.json
 	draftSchemaJSON []byte
+	//go:embed schemas/cover_letter.json
+	coverLetterSchemaJSON []byte
 
-	analysisSchema = mustSchema(analysisSchemaJSON)
-	draftSchema    = mustSchema(draftSchemaJSON)
+	analysisSchema    = mustSchema(analysisSchemaJSON)
+	draftSchema       = mustSchema(draftSchemaJSON)
+	coverLetterSchema = mustSchema(coverLetterSchemaJSON)
 )
 
 func mustSchema(data []byte) map[string]any {
@@ -79,6 +84,9 @@ type Draft struct {
 	Projects    []ProjectLine `json:"projects"`
 	Skills      []SkillGroup  `json:"skills"`
 	CoverLetter CoverLetter   `json:"cover_letter"`
+	// Warnings are style problems that survived the retry, worth a look
+	// before sending.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Line is a piece of generated text and the IDs it was drawn from.
@@ -88,7 +96,10 @@ type Line struct {
 }
 
 type RoleDraft struct {
-	ID      string `json:"id"`
+	ID string `json:"id"`
+	// Brief roles are old and unrelated to the posting: one line under
+	// Earlier experience, no bullets.
+	Brief   bool   `json:"brief,omitempty"`
 	Bullets []Line `json:"bullets"`
 }
 
@@ -143,43 +154,69 @@ func (t *Tailor) Analyze(ctx context.Context, posting string) (*Analysis, error)
 	return &a, nil
 }
 
-// maxAttempts is how many drafts Write requests before giving up on one that
-// keeps citing sources that don't exist.
+// maxAttempts is how many times Write asks for each document before giving
+// up on one that keeps failing the source checks.
 const maxAttempts = 2
 
-// Write drafts the resume and cover letter. If a draft fails the source
-// checks, Write asks once more with the problems listed; if the second draft
-// fails too, it returns a *DraftError holding that draft.
+// Write drafts the resume, then the cover letter in a second call that sees
+// the finished resume. Each document is checked: problems (citations that
+// don't exist, skills the candidate doesn't have) and style warnings (fact
+// dumps, semicolon run-ons, stock openings) are sent back for one retry.
+// Problems that survive the retry fail the draft with a *DraftError; warnings
+// that survive are kept in Draft.Warnings.
 func (t *Tailor) Write(ctx context.Context, posting string, a *Analysis, answers []Answer) (*Draft, error) {
 	cat := newCatalog(t.Profile, answers)
-	prompt := writePrompt(posting, a, answers)
-	var (
-		d     *Draft
-		probs []string
-	)
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
+
+	d := new(Draft)
+	resumeWarnings, err := t.attempt(ctx, "write resume", resumePrompt(posting, a, answers), draftSchema, d,
+		func() findings { return cat.checkResume(d) })
+	if de, ok := err.(*DraftError); ok {
+		de.Draft = d
+		return nil, de
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	cl := new(CoverLetter)
+	letterWarnings, err := t.attempt(ctx, "write cover letter", coverLetterPrompt(posting, a, answers, d), coverLetterSchema, cl,
+		func() findings { return cat.checkLetter(cl, posting) })
+	d.CoverLetter = *cl
+	if de, ok := err.(*DraftError); ok {
+		de.Draft = d
+		return nil, de
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.Warnings = append(resumeWarnings, letterWarnings...)
+	return d, nil
+}
+
+// attempt asks for a document up to maxAttempts times, decoding each
+// response into out and checking it. It returns the warnings left after the
+// last attempt, or a *DraftError if problems remain.
+func (t *Tailor) attempt(ctx context.Context, what, prompt string, schema map[string]any, out any, check func() findings) ([]string, error) {
+	var f findings
+	for n := 1; n <= maxAttempts; n++ {
 		p := prompt
-		if attempt > 1 {
-			p = retryPrompt(prompt, d, probs)
+		if n > 1 {
+			p = retryPrompt(prompt, out, f.problems, f.warnings)
 		}
-		out, err := t.LLM.JSON(ctx, llm.Request{
-			System:    t.system,
-			Prompt:    p,
-			Schema:    draftSchema,
-			MaxTokens: 16000,
-		})
+		data, err := t.LLM.JSON(ctx, llm.Request{System: t.system, Prompt: p, Schema: schema, MaxTokens: 16000})
 		if err != nil {
-			return nil, fmt.Errorf("write draft: %w", err)
+			return nil, fmt.Errorf("%s: %w", what, err)
 		}
-		d = new(Draft)
-		if err := json.Unmarshal(out, d); err != nil {
-			return nil, fmt.Errorf("write draft: decode response: %w", err)
+		reflect.ValueOf(out).Elem().SetZero() // nothing carries over from the last attempt
+		if err := json.Unmarshal(data, out); err != nil {
+			return nil, fmt.Errorf("%s: decode response: %w", what, err)
 		}
-		if probs = cat.check(d); len(probs) == 0 {
-			return d, nil
+		f = check()
+		if len(f.problems) == 0 && (len(f.warnings) == 0 || n == maxAttempts) {
+			return f.warnings, nil
 		}
 	}
-	return nil, &DraftError{Draft: d, Problems: probs}
+	return nil, &DraftError{Problems: f.problems}
 }
 
 // DraftError means the model's draft still failed the source checks after a

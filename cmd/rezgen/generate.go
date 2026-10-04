@@ -140,6 +140,12 @@ func generate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "Saved to %s\n  %s\n  %s\n", st.DocsDir(app), st.ResumePDF(app), st.CoverLetterPDF(app))
+	if len(d.Warnings) > 0 {
+		fmt.Fprintln(stderr, "Worth a look before sending:")
+		for _, w := range d.Warnings {
+			fmt.Fprintf(stderr, "  - %s\n", w)
+		}
+	}
 	if max := p.Preferences.MaxPages; max > 0 && pages > max {
 		fmt.Fprintf(stderr, "Note: the resume is %d pages; your profile asks for %d. Open it in rezgen and press e to trim it.\n", pages, max)
 	}

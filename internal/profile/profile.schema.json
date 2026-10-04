@@ -140,7 +140,8 @@
       "properties": {
         "tone": {"type": "string"},
         "max_pages": {"type": "integer", "minimum": 1, "maximum": 3},
-        "avoid_words": {"$ref": "#/$defs/strings"}
+        "avoid_words": {"$ref": "#/$defs/strings"},
+        "projects_position": {"enum": ["before", "after"], "description": "Where the Projects section goes on the resume relative to Experience (default before)"}
       }
     }
   }
