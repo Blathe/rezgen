@@ -399,3 +399,19 @@ func TestRenderLayout(t *testing.T) {
 		t.Error("projects_position after not honored")
 	}
 }
+
+func TestEmptyResponsesAreErrors(t *testing.T) {
+	fake := &llmtest.Fake{Responses: [][]byte{[]byte(`{"company": "Northwind", "role": "", "seniority": "", "must_have": [], "nice_to_have": [], "keywords": [], "responsibilities": [], "matches": [], "gaps": [], "questions": []}`)}}
+	tl, _ := New(fake, loadProfile(t))
+	if _, err := tl.Analyze(context.Background(), testPosting); err == nil || !strings.Contains(err.Error(), "empty analysis") {
+		t.Errorf("want an empty-analysis error, got %v", err)
+	}
+
+	hollow := `{"headline": "", "summary": {"text": "", "sources": []}, "experience": [{"id": "__drop__", "brief": false, "bullets": []}], "projects": [], "skills": []}`
+	fake = &llmtest.Fake{Responses: [][]byte{[]byte(hollow)}}
+	tl, _ = New(fake, loadProfile(t))
+	_, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "empty resume") || len(fake.Requests) != 1 {
+		t.Errorf("want an empty-resume error without a retry, got %v after %d calls", err, len(fake.Requests))
+	}
+}

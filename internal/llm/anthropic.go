@@ -20,6 +20,11 @@ type Anthropic struct {
 	client anthropic.Client
 	model  string
 	effort anthropic.BetaOutputConfigEffort
+	// Fallbacks turns on server-side refusal fallbacks. It's off by default:
+	// a fallback answer comes from a different model, and the API keeps
+	// routing similar requests (every call shares rezgen's system prompt) to
+	// that model for about an hour, which produced empty drafts.
+	Fallbacks bool
 }
 
 // NewAnthropic returns a Client for model at the given effort level
@@ -73,10 +78,9 @@ func hasPrefix(model string, prefixes []string) bool {
 }
 
 // JSON sends req with structured output enabled, so the response text is
-// JSON that matches req.Schema. On models that support them, it also sets
-// the effort level and turns on server-side fallbacks: if a safety
-// classifier declines the request, the API re-serves it on a fallback model
-// within the same call instead of failing.
+// JSON that matches req.Schema. On models that support it, it also sets the
+// effort level. A response from a model other than the one requested (a
+// server-side fallback) is returned as an error rather than used.
 func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 	maxTokens := req.MaxTokens
 	if maxTokens == 0 {
@@ -99,7 +103,7 @@ func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 	if hasPrefix(a.model, effortModels) {
 		params.OutputConfig.Effort = a.effort
 	}
-	if hasPrefix(a.model, fallbackModels) {
+	if a.Fallbacks && hasPrefix(a.model, fallbackModels) {
 		params.Fallbacks = anthropic.BetaFallbacksParamUnion{OfDefault: constant.ValueOf[constant.Default]()}
 		params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
 	}
@@ -113,9 +117,17 @@ func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	debugLog(req, msg)
+	if served := fallbackModel(msg); served != "" {
+		return nil, fmt.Errorf("%s declined this request and %s answered instead; rezgen doesn't use fallback answers. Try again, or pick another model in settings", a.model, served)
+	}
 	switch msg.StopReason {
 	case anthropic.BetaStopReasonRefusal:
-		return nil, fmt.Errorf("model declined the request (%s)", msg.StopDetails.Category)
+		cat := string(msg.StopDetails.Category)
+		if cat == "" {
+			cat = "no reason given"
+		}
+		return nil, fmt.Errorf("%s declined this request (%s). This is usually a false positive; try again, or pick another model in settings", a.model, cat)
 	case anthropic.BetaStopReasonMaxTokens:
 		return nil, fmt.Errorf("response hit the %d-token limit before finishing", maxTokens)
 	}
@@ -125,4 +137,15 @@ func (a *Anthropic) JSON(ctx context.Context, req Request) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("response had no text (stop reason %q)", msg.StopReason)
+}
+
+// fallbackModel returns the model that answered if a server-side fallback
+// served the response, or "".
+func fallbackModel(msg *anthropic.BetaMessage) string {
+	for _, it := range msg.Usage.Iterations {
+		if it.Type == "fallback_message" {
+			return string(msg.Model)
+		}
+	}
+	return ""
 }

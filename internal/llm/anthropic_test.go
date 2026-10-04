@@ -65,11 +65,18 @@ func TestAnthropicJSON(t *testing.T) {
 	if len(sys) != 1 || !strings.Contains(toJSON(sys[0]), `"cache_control":{"type":"ephemeral"}`) {
 		t.Errorf("system not cached: %v", sys)
 	}
-	if req["fallbacks"] != "default" {
-		t.Errorf("fallbacks %v", req["fallbacks"])
+	if _, has := req["fallbacks"]; has || header.Get("Anthropic-Beta") != "" {
+		t.Errorf("fallbacks should be off by default: %v, beta %q", req["fallbacks"], header.Get("Anthropic-Beta"))
 	}
-	if !strings.Contains(header.Get("Anthropic-Beta"), "server-side-fallback-2026-07-01") {
-		t.Errorf("beta header %q", header.Get("Anthropic-Beta"))
+
+	// Opting in sends the default fallback form and its beta header.
+	c, got, header = serve(t, okResponse)
+	c.Fallbacks = true
+	if _, err := c.JSON(context.Background(), Request{System: "sys", Prompt: "hello", Schema: schema}); err != nil {
+		t.Fatal(err)
+	}
+	if (*got)["fallbacks"] != "default" || !strings.Contains(header.Get("Anthropic-Beta"), "server-side-fallback-2026-07-01") {
+		t.Errorf("fallbacks %v, beta %q", (*got)["fallbacks"], header.Get("Anthropic-Beta"))
 	}
 }
 
@@ -114,8 +121,19 @@ func TestModelCapabilities(t *testing.T) {
 		{"claude-sonnet-5-5", true, true},
 		{"claude-opus-5-5", true, true},
 	} {
+		// Fallbacks are off by default for every model.
 		bodies, betas = nil, nil
 		if _, err := NewAnthropic(tt.model, "high", opts...).JSON(context.Background(), req); err != nil {
+			t.Fatalf("%s: %v", tt.model, err)
+		}
+		if _, has := bodies[0]["fallbacks"]; has || strings.Contains(betas[0], "server-side-fallback") {
+			t.Errorf("%s: fallbacks sent by default", tt.model)
+		}
+
+		bodies, betas = nil, nil
+		c := NewAnthropic(tt.model, "high", opts...)
+		c.Fallbacks = true
+		if _, err := c.JSON(context.Background(), req); err != nil {
 			t.Fatalf("%s: %v", tt.model, err)
 		}
 		oc, _ := bodies[0]["output_config"].(map[string]any)
@@ -127,6 +145,17 @@ func TestModelCapabilities(t *testing.T) {
 		if oc["format"] == nil {
 			t.Errorf("%s: structured output missing", tt.model)
 		}
+	}
+}
+
+func TestRejectsFallbackAnswers(t *testing.T) {
+	body := strings.Replace(okResponse, `"usage": {"input_tokens": 10, "output_tokens": 5}`,
+		`"usage": {"input_tokens": 10, "output_tokens": 5, "iterations": [{"type": "message", "input_tokens": 10, "output_tokens": 0}, {"type": "fallback_message", "input_tokens": 10, "output_tokens": 5}]}`, 1)
+	body = strings.Replace(body, `"model": "claude-opus-5-5"`, `"model": "claude-opus-4-8"`, 1)
+	c, _, _ := serve(t, body)
+	_, err := c.JSON(context.Background(), Request{Prompt: "x", Schema: map[string]any{"type": "object"}})
+	if err == nil || !strings.Contains(err.Error(), "claude-opus-4-8 answered instead") {
+		t.Errorf("want a fallback error, got %v", err)
 	}
 }
 

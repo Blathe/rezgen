@@ -56,7 +56,7 @@ When it's done the application shows **generated**, with clickable links to the 
 | `d` | Delete the application |
 | `esc` | Back to the list (also cancels a running request) |
 
-Contact details, job titles, dates, education and certifications are always copied straight from the profile, never retyped by the model. A generation makes two API calls; the profile is sent as a cached system prompt, so the second call reads it from the cache, and server-side fallbacks retry on another model if a safety classifier declines a request.
+Contact details, job titles, dates, education and certifications are always copied straight from the profile, never retyped by the model. A generation makes three API calls (analyze, resume, then the cover letter, which sees the finished resume). The profile is sent as a cached system prompt, so the later calls read it from the cache. If Claude declines a request, which is usually a false positive, rezgen says so instead of quietly using another model's answer; generate again.
 
 ## Your profile
 
@@ -130,3 +130,5 @@ To check how the app's screens look without a terminal, render them in full colo
 ```sh
 REZGEN_PREVIEW=preview.html go test ./internal/tui -run TestPreview
 ```
+
+To see exactly what was sent to Claude and what came back, set `REZGEN_DEBUG_DIR` to a folder before running rezgen; each call is saved there as JSON (it includes your profile and the posting, so keep it local).

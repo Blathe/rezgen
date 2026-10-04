@@ -150,6 +150,9 @@ func (t *Tailor) Analyze(ctx context.Context, posting string) (*Analysis, error)
 	if err := json.Unmarshal(out, &a); err != nil {
 		return nil, fmt.Errorf("analyze posting: decode response: %w", err)
 	}
+	if len(a.MustHave)+len(a.Responsibilities)+len(a.Keywords)+len(a.Matches) == 0 {
+		return nil, errEmpty("analysis")
+	}
 	dedupeQuestionIDs(a.Questions)
 	return &a, nil
 }
@@ -169,6 +172,7 @@ func (t *Tailor) Write(ctx context.Context, posting string, a *Analysis, answers
 
 	d := new(Draft)
 	resumeWarnings, err := t.attempt(ctx, "write resume", resumePrompt(posting, a, answers), draftSchema, d,
+		func() bool { return d.Summary.Text == "" && d.Headline == "" },
 		func() findings { return cat.checkResume(d) })
 	if de, ok := err.(*DraftError); ok {
 		de.Draft = d
@@ -180,6 +184,7 @@ func (t *Tailor) Write(ctx context.Context, posting string, a *Analysis, answers
 
 	cl := new(CoverLetter)
 	letterWarnings, err := t.attempt(ctx, "write cover letter", coverLetterPrompt(posting, a, answers, d), coverLetterSchema, cl,
+		func() bool { return len(strings.TrimSpace(strings.Join(cl.texts(), ""))) == 0 },
 		func() findings { return cat.checkLetter(cl, posting) })
 	d.CoverLetter = *cl
 	if de, ok := err.(*DraftError); ok {
@@ -196,7 +201,7 @@ func (t *Tailor) Write(ctx context.Context, posting string, a *Analysis, answers
 // attempt asks for a document up to maxAttempts times, decoding each
 // response into out and checking it. It returns the warnings left after the
 // last attempt, or a *DraftError if problems remain.
-func (t *Tailor) attempt(ctx context.Context, what, prompt string, schema map[string]any, out any, check func() findings) ([]string, error) {
+func (t *Tailor) attempt(ctx context.Context, what, prompt string, schema map[string]any, out any, empty func() bool, check func() findings) ([]string, error) {
 	var f findings
 	for n := 1; n <= maxAttempts; n++ {
 		p := prompt
@@ -210,6 +215,9 @@ func (t *Tailor) attempt(ctx context.Context, what, prompt string, schema map[st
 		reflect.ValueOf(out).Elem().SetZero() // nothing carries over from the last attempt
 		if err := json.Unmarshal(data, out); err != nil {
 			return nil, fmt.Errorf("%s: decode response: %w", what, err)
+		}
+		if empty() {
+			return nil, errEmpty(strings.TrimPrefix(what, "write "))
 		}
 		f = check()
 		if len(f.problems) == 0 && (len(f.warnings) == 0 || n == maxAttempts) {
@@ -246,4 +254,11 @@ func dedupeQuestionIDs(qs []Question) {
 		}
 		qs[i].ID = id
 	}
+}
+
+// errEmpty reports a structurally valid but empty response. Retrying
+// immediately tends to get the same, so it's an error rather than a check
+// failure.
+func errEmpty(what string) error {
+	return fmt.Errorf("Claude returned an empty %s. This happens occasionally; wait a few minutes and generate again, or pick another model in settings", what)
 }
