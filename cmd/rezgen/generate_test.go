@@ -49,12 +49,13 @@ func writePosting(t *testing.T) string {
 const (
 	analysisFixture = "../../internal/tailor/testdata/analysis.json"
 	draftFixture    = "../../internal/tailor/testdata/draft.json"
+	letterFixture   = "../../internal/tailor/testdata/cover_letter.json"
 	exampleProfile  = "../../examples/profile.example.json"
 )
 
 func TestGenerate(t *testing.T) {
 	// Answer the first question, skip the second.
-	fake := useFake(t, "No, only Docker.\n\n", analysisFixture, draftFixture)
+	fake := useFake(t, "No, only Docker.\n\n", analysisFixture, draftFixture, letterFixture)
 	out := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"generate", "-profile", exampleProfile, "-posting", writePosting(t), "-out", out}, &stdout, &stderr)
@@ -90,7 +91,7 @@ func TestGenerateLearnsAnswers(t *testing.T) {
 	os.WriteFile(prof, data, 0o644)
 
 	// Answer the first question, skip the second, accept saving.
-	useFake(t, "No, only Docker.\n\n\n", analysisFixture, draftFixture)
+	useFake(t, "No, only Docker.\n\n\n", analysisFixture, draftFixture, letterFixture)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"generate", "-profile", prof, "-posting", writePosting(t), "-out", t.TempDir(), "-no-pdf"}, &stdout, &stderr)
 	if code != 0 {
@@ -112,7 +113,7 @@ func TestGenerateLearnsAnswers(t *testing.T) {
 	}
 
 	// The next run sends the learned fact to the model with the profile.
-	fake := useFake(t, "", analysisFixture, draftFixture)
+	fake := useFake(t, "", analysisFixture, draftFixture, letterFixture)
 	if code := run([]string{"generate", "-profile", prof, "-posting", writePosting(t), "-out", t.TempDir(), "-no-pdf", "-no-questions"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("second run exit %d", code)
 	}
@@ -126,7 +127,7 @@ func TestGenerateDeclinesLearning(t *testing.T) {
 	data, _ := os.ReadFile(exampleProfile)
 	os.WriteFile(prof, data, 0o644)
 
-	useFake(t, "No, only Docker.\n\nn\n", analysisFixture, draftFixture)
+	useFake(t, "No, only Docker.\n\nn\n", analysisFixture, draftFixture, letterFixture)
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"generate", "-profile", prof, "-posting", writePosting(t), "-out", t.TempDir(), "-no-pdf"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
@@ -138,7 +139,7 @@ func TestGenerateDeclinesLearning(t *testing.T) {
 }
 
 func TestGenerateNoQuestions(t *testing.T) {
-	fake := useFake(t, "", analysisFixture, draftFixture)
+	fake := useFake(t, "", analysisFixture, draftFixture, letterFixture)
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"generate", "-profile", exampleProfile, "-posting", writePosting(t), "-out", t.TempDir(), "-no-questions"}, &stdout, &stderr)
 	if code != 0 {
@@ -150,7 +151,7 @@ func TestGenerateNoQuestions(t *testing.T) {
 }
 
 func TestGenerateNoPDF(t *testing.T) {
-	useFake(t, "", analysisFixture, draftFixture)
+	useFake(t, "", analysisFixture, draftFixture, letterFixture)
 	out := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"generate", "-profile", exampleProfile, "-posting", writePosting(t), "-out", out, "-no-questions", "-no-pdf"}, &stdout, &stderr)
@@ -206,7 +207,7 @@ func TestGenerateFromURL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	fake := useFake(t, "", analysisFixture, draftFixture)
+	fake := useFake(t, "", analysisFixture, draftFixture, letterFixture)
 	out := t.TempDir()
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"generate", "-profile", exampleProfile, "-posting", srv.URL + "/jobs/1", "-out", out, "-no-questions"}, &stdout, &stderr)

@@ -100,6 +100,10 @@ type Preferences struct {
 	Tone       string   `json:"tone,omitempty"`
 	MaxPages   int      `json:"max_pages,omitempty"`
 	AvoidWords []string `json:"avoid_words,omitempty"`
+	// ProjectsPosition puts the Projects section "before" Experience (the
+	// default, since projects are often the strongest evidence for technical
+	// roles) or "after" it.
+	ProjectsPosition string `json:"projects_position,omitempty"`
 }
 
 // Current reports whether the role has no end date.

@@ -68,26 +68,54 @@ func TestAnalyze(t *testing.T) {
 	}
 }
 
-func TestWriteAcceptsGoodDraft(t *testing.T) {
-	fake := &llmtest.Fake{Responses: [][]byte{readFile(t, "testdata/analysis.json"), readFile(t, "testdata/draft.json")}}
+func goodLetter(t *testing.T) *CoverLetter {
+	t.Helper()
+	var cl CoverLetter
+	if err := json.Unmarshal(readFile(t, "testdata/cover_letter.json"), &cl); err != nil {
+		t.Fatal(err)
+	}
+	return &cl
+}
+
+const testPosting = "Northwind Freight is hiring its first AI Solutions Engineer for its operations, finance and support teams."
+
+func TestWriteResumeThenLetter(t *testing.T) {
+	fake := &llmtest.Fake{Responses: [][]byte{
+		readFile(t, "testdata/analysis.json"), readFile(t, "testdata/draft.json"), readFile(t, "testdata/cover_letter.json"),
+	}}
 	tl, _ := New(fake, loadProfile(t))
-	a, err := tl.Analyze(context.Background(), "posting")
+	a, err := tl.Analyze(context.Background(), testPosting)
 	if err != nil {
 		t.Fatal(err)
 	}
 	answers := []Answer{{QuestionID: "q-kubernetes", Question: "Kubernetes?", Text: "No."}}
-	d, err := tl.Write(context.Background(), "posting", a, answers)
+	d, err := tl.Write(context.Background(), testPosting, a, answers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Headline != "AI Solutions Engineer" {
-		t.Errorf("headline %q", d.Headline)
+	if len(fake.Requests) != 3 {
+		t.Fatalf("want analyze, resume and letter calls, got %d", len(fake.Requests))
 	}
-	if fake.Requests[0].System != fake.Requests[1].System {
-		t.Error("system prompt differs between calls, so it can't be cached")
+	if d.Headline != "AI Solutions Engineer" || !strings.HasPrefix(d.CoverLetter.Paragraphs[0].Text, "Northwind is hiring") || len(d.Warnings) != 0 {
+		t.Errorf("unexpected draft: %q, %+v, warnings %v", d.Headline, d.CoverLetter, d.Warnings)
 	}
-	if !strings.Contains(fake.Requests[1].Prompt, "q-kubernetes\n  Q: Kubernetes?\n  A: No.") {
-		t.Errorf("write prompt is missing the answers:\n%s", fake.Requests[1].Prompt)
+	for i := 1; i < 3; i++ {
+		if fake.Requests[i].System != fake.Requests[0].System {
+			t.Error("system prompt differs between calls, so it can't be cached")
+		}
+		if !strings.Contains(fake.Requests[i].Prompt, "q-kubernetes\n  Q: Kubernetes?\n  A: No.") {
+			t.Errorf("call %d is missing the answers", i)
+		}
+	}
+	resume, letter := fake.Requests[1], fake.Requests[2]
+	if _, ok := resume.Schema["properties"].(map[string]any)["cover_letter"]; ok {
+		t.Error("the resume call should not ask for a cover letter")
+	}
+	if !strings.Contains(letter.Prompt, "<resume>") || !strings.Contains(letter.Prompt, "Built a Claude-based triage service") {
+		t.Error("the letter call should see the finished resume")
+	}
+	if !strings.Contains(letter.Prompt, "BAD (a fact dump)") {
+		t.Error("the letter prompt should show what to avoid")
 	}
 }
 
@@ -95,16 +123,16 @@ func TestWriteRetriesThenSucceeds(t *testing.T) {
 	bad := goodDraft(t)
 	bad.Experience[0].Bullets[0].Sources = []string{"made-up-id"}
 	badJSON, _ := json.Marshal(bad)
-	fake := &llmtest.Fake{Responses: [][]byte{badJSON, readFile(t, "testdata/draft.json")}}
+	fake := &llmtest.Fake{Responses: [][]byte{badJSON, readFile(t, "testdata/draft.json"), readFile(t, "testdata/cover_letter.json")}}
 	tl, _ := New(fake, loadProfile(t))
-	if _, err := tl.Write(context.Background(), "posting", &Analysis{}, nil); err != nil {
+	if _, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(fake.Requests) != 2 {
-		t.Fatalf("want 2 calls, got %d", len(fake.Requests))
+	if len(fake.Requests) != 3 {
+		t.Fatalf("want 3 calls, got %d", len(fake.Requests))
 	}
 	retry := fake.Requests[1].Prompt
-	if !strings.Contains(retry, `"made-up-id"`) || !strings.Contains(retry, "<previous_draft>") {
+	if !strings.Contains(retry, `"made-up-id"`) || !strings.Contains(retry, "<previous_attempt>") || !strings.Contains(retry, "must all be fixed") {
 		t.Errorf("retry prompt doesn't explain the problem:\n%s", retry)
 	}
 }
@@ -115,7 +143,7 @@ func TestWriteGivesUp(t *testing.T) {
 	badJSON, _ := json.Marshal(bad)
 	fake := &llmtest.Fake{Responses: [][]byte{badJSON, badJSON}}
 	tl, _ := New(fake, loadProfile(t))
-	_, err := tl.Write(context.Background(), "posting", &Analysis{}, nil)
+	_, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil)
 	var de *DraftError
 	if !errors.As(err, &de) {
 		t.Fatalf("want DraftError, got %v", err)
@@ -125,10 +153,32 @@ func TestWriteGivesUp(t *testing.T) {
 	}
 }
 
-func TestCheck(t *testing.T) {
+func TestLetterStyleWarningsRetryThenStick(t *testing.T) {
+	dump := goodLetter(t)
+	dump.Paragraphs[1] = Line{
+		Text:    "I built a triage service. I cut first-response time 40%. I automated invoice entry. I saved 30 hours a week.",
+		Sources: []string{"acme-ticket-triage", "acme-invoice-extract", "brightpath-scheduling", "fact-1"},
+	}
+	dumpJSON, _ := json.Marshal(dump)
+	fake := &llmtest.Fake{Responses: [][]byte{readFile(t, "testdata/draft.json"), dumpJSON, dumpJSON}}
+	tl, _ := New(fake, loadProfile(t))
+	d, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil)
+	if err != nil {
+		t.Fatalf("style warnings shouldn't fail the draft: %v", err)
+	}
+	if len(fake.Requests) != 3 || !strings.Contains(fake.Requests[2].Prompt, "These parts read badly") {
+		t.Fatalf("the letter should be retried once with the warnings")
+	}
+	joined := strings.Join(d.Warnings, "\n")
+	if !strings.Contains(joined, "4 separate sources") || !strings.Contains(joined, `three sentences in a row with "I"`) {
+		t.Errorf("warnings not kept: %v", d.Warnings)
+	}
+}
+
+func TestCheckResume(t *testing.T) {
 	p := loadProfile(t)
-	answers := []Answer{{QuestionID: "q-team-size", Text: "12 people"}}
-	tests := []struct {
+	answers := []Answer{{QuestionID: "q-team-size", Text: "12 people, working in our Custom ERP"}}
+	problems := []struct {
 		name   string
 		mutate func(d *Draft)
 		want   string
@@ -141,22 +191,64 @@ func TestCheck(t *testing.T) {
 		{"unknown role", func(d *Draft) { d.Experience[0].ID = "globex" }, `"globex", which is not a role`},
 		{"unknown project", func(d *Draft) { d.Projects[0].ID = "other" }, `"other", which is not a project`},
 		{"invented skill", func(d *Draft) { d.Skills[0].Items = append(d.Skills[0].Items, "Kubernetes") }, `skill "Kubernetes"`},
-		{"avoided word", func(d *Draft) { d.CoverLetter.Paragraphs[0].Text = "I am Passionate about this." }, `avoided word "passionate"`},
-		{"empty cover letter", func(d *Draft) { d.CoverLetter.Paragraphs = nil }, "cover letter has no paragraphs"},
+		{"avoided word", func(d *Draft) { d.Summary.Text = "A passionate engineer." }, `avoided word "passionate"`},
+		{"no bullets", func(d *Draft) { d.Experience[1].Bullets = nil }, `role "brightpath" has no bullets`},
 	}
-	for _, tt := range tests {
+	for _, tt := range problems {
 		t.Run(tt.name, func(t *testing.T) {
 			d := goodDraft(t)
 			tt.mutate(d)
-			probs := newCatalog(p, answers).check(d)
-			for _, pr := range probs {
+			f := newCatalog(p, answers).checkResume(d)
+			for _, pr := range f.problems {
 				if strings.Contains(pr, tt.want) {
 					return
 				}
 			}
-			t.Errorf("no problem containing %q; got %v", tt.want, probs)
+			t.Errorf("no problem containing %q; got %v", tt.want, f.problems)
 		})
 	}
+
+	warnings := []struct {
+		name   string
+		mutate func(d *Draft)
+		want   string
+	}{
+		{"semicolon bullet", func(d *Draft) { d.Experience[0].Bullets[0].Text = "Built a triage service; cut response time" }, "semicolon"},
+		{"tenure summary", func(d *Draft) { d.Summary.Text = "Spent nearly 8 years building internal tools." }, "leads with tenure"},
+		{"repeated verb", func(d *Draft) { d.Experience[0].Bullets[1].Text = "Built an invoice extraction workflow." }, `more than one bullet with "built"`},
+		{"project name", func(d *Draft) { d.Projects[0].Text = "rezgen: a Go CLI." }, "repeats the project's name"},
+		{"no projects", func(d *Draft) { d.Projects = nil }, "has no projects"},
+		{"pseudo-skill", func(d *Draft) { d.Skills[0].Items = append(d.Skills[0].Items, "Custom ERP") }, "isn't something a recruiter searches for"},
+		{"too long", func(d *Draft) {
+			for i := 0; i < 30; i++ {
+				d.Experience[0].Bullets = append(d.Experience[0].Bullets, Line{Text: "Automated invoice data entry with document extraction and a review queue.", Sources: []string{"acme-invoice-extract"}})
+			}
+		}, "runs past the 1-page limit"},
+	}
+	for _, tt := range warnings {
+		t.Run(tt.name, func(t *testing.T) {
+			d := goodDraft(t)
+			tt.mutate(d)
+			f := newCatalog(p, answers).checkResume(d)
+			if len(f.problems) > 0 {
+				t.Errorf("style issues shouldn't be problems: %v", f.problems)
+			}
+			for _, w := range f.warnings {
+				if strings.Contains(w, tt.want) {
+					return
+				}
+			}
+			t.Errorf("no warning containing %q; got %v", tt.want, f.warnings)
+		})
+	}
+
+	t.Run("brief roles need no bullets", func(t *testing.T) {
+		d := goodDraft(t)
+		d.Experience[1] = RoleDraft{ID: "brightpath", Brief: true}
+		if f := newCatalog(p, answers).checkResume(d); len(f.problems)+len(f.warnings) > 0 {
+			t.Errorf("want no findings, got %+v", f)
+		}
+	})
 
 	t.Run("learned facts are citable and can supply skills", func(t *testing.T) {
 		lp := *p
@@ -164,13 +256,13 @@ func TestCheck(t *testing.T) {
 		d := goodDraft(t)
 		d.Experience[0].Bullets[0].Sources = append(d.Experience[0].Bullets[0].Sources, "q-docker")
 		d.Skills[0].Items = append(d.Skills[0].Items, "Docker")
-		if probs := newCatalog(&lp, nil).check(d); len(probs) > 0 {
-			t.Errorf("want no problems, got %v", probs)
+		if f := newCatalog(&lp, nil).checkResume(d); len(f.problems) > 0 {
+			t.Errorf("want no problems, got %v", f.problems)
 		}
 		// A skill only named in a question, not an answer, is still rejected.
 		d.Skills[0].Items = append(d.Skills[0].Items, "Containers")
-		if probs := newCatalog(&lp, nil).check(d); len(probs) != 1 {
-			t.Errorf("want 1 problem, got %v", probs)
+		if f := newCatalog(&lp, nil).checkResume(d); len(f.problems) != 1 {
+			t.Errorf("want 1 problem, got %v", f.problems)
 		}
 	})
 
@@ -178,10 +270,73 @@ func TestCheck(t *testing.T) {
 		d := goodDraft(t)
 		d.Experience[0].Bullets[0].Sources = append(d.Experience[0].Bullets[0].Sources, "q-team-size")
 		d.Skills[0].Items = []string{"claude api", "AWS Lambda"} // case-insensitive; Lambda comes from a highlight
-		if probs := newCatalog(p, answers).check(d); len(probs) > 0 {
-			t.Errorf("want no problems, got %v", probs)
+		if f := newCatalog(p, answers).checkResume(d); len(f.problems) > 0 {
+			t.Errorf("want no problems, got %v", f.problems)
 		}
 	})
+}
+
+func TestCheckLetter(t *testing.T) {
+	p := loadProfile(t)
+	if f := newCatalog(p, nil).checkLetter(goodLetter(t), testPosting); len(f.problems)+len(f.warnings) > 0 {
+		t.Fatalf("the good letter should pass cleanly, got %+v", f)
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(cl *CoverLetter)
+		problem bool
+		want    string
+	}{
+		{"unknown source", func(cl *CoverLetter) { cl.Paragraphs[1].Sources = []string{"made-up"} }, true, `cites "made-up"`},
+		{"avoided word", func(cl *CoverLetter) { cl.Paragraphs[3].Text = "I'm passionate about this." }, true, `avoided word "passionate"`},
+		{"no paragraphs", func(cl *CoverLetter) { cl.Paragraphs = nil }, true, "no paragraphs"},
+		{"invented number", func(cl *CoverLetter) {
+			cl.Paragraphs[1].Text = strings.Replace(cl.Paragraphs[1].Text, "1,200", "5,000", 1)
+		}, false, `mentions "5,000"`},
+		{"invented name", func(cl *CoverLetter) {
+			cl.Paragraphs[2].Text = strings.Replace(cl.Paragraphs[2].Text, "document extraction", "Salesforce extraction", 1)
+		}, false, `mentions "Salesforce"`},
+		{"uncited number", func(cl *CoverLetter) { cl.Paragraphs[3].Text = "I cut costs 40% somewhere else." }, false, `mentions "40%"`},
+		{"stock opening", func(cl *CoverLetter) {
+			cl.Paragraphs[0].Text = "I am writing to apply for the AI Solutions Engineer role. " + cl.Paragraphs[0].Text
+		}, false, "opens with a stock line"},
+		{"restated posting", func(cl *CoverLetter) {
+			cl.Paragraphs[0].Text = "Your posting describes the work I want to do. " + cl.Paragraphs[0].Text
+		}, false, "opens with a stock line"},
+		{"too short", func(cl *CoverLetter) { cl.Paragraphs = cl.Paragraphs[:2] }, false, "aim for 250 to 350"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cl := goodLetter(t)
+			tt.mutate(cl)
+			f := newCatalog(p, nil).checkLetter(cl, testPosting)
+			got := f.warnings
+			if tt.problem {
+				got = f.problems
+			}
+			for _, s := range got {
+				if strings.Contains(s, tt.want) {
+					return
+				}
+			}
+			t.Errorf("no finding containing %q; got %+v", tt.want, f)
+		})
+	}
+}
+
+func TestShortLocation(t *testing.T) {
+	for in, want := range map[string]string{
+		"Post Falls, Idaho, United States": "Post Falls, ID",
+		"Coeur d'Alene, ID":                "Coeur d'Alene, ID",
+		"Sacramento, California, USA":      "Sacramento, CA",
+		"Remote":                           "Remote",
+		"London, United Kingdom":           "London, United Kingdom",
+	} {
+		if got := ShortLocation(in); got != want {
+			t.Errorf("ShortLocation(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestRender(t *testing.T) {
@@ -225,5 +380,55 @@ func TestAnalysisName(t *testing.T) {
 		if got := a.Name(); got != tt.want {
 			t.Errorf("Name() = %q, want %q", got, tt.want)
 		}
+	}
+}
+
+func TestRenderLayout(t *testing.T) {
+	p := loadProfile(t)
+	d := goodDraft(t)
+	d.Experience[1] = RoleDraft{ID: "brightpath", Brief: true}
+	d.Projects[0].Text = "rezgen: Go CLI that tailors resumes."
+	resume := RenderResume(p, d)
+	proj, exp, earlier := strings.Index(resume, "## Projects"), strings.Index(resume, "## Experience"), strings.Index(resume, "## Earlier experience")
+	if proj < 0 || exp < 0 || earlier < 0 || !(proj < exp && exp < earlier) {
+		t.Errorf("want Projects, then Experience, then Earlier experience:\n%s", resume)
+	}
+	if !strings.Contains(resume, "- Software Developer, BrightPath Health (Jun 2018 - Feb 2022)\n") {
+		t.Errorf("brief role not on one line:\n%s", resume)
+	}
+	if !strings.Contains(resume, "**: Go CLI that tailors resumes.") {
+		t.Errorf("project name not stripped:\n%s", resume)
+	}
+
+	p.Preferences.ProjectsPosition = "after"
+	resume = RenderResume(p, d)
+	if strings.Index(resume, "## Projects") < strings.Index(resume, "## Experience") {
+		t.Error("projects_position after not honored")
+	}
+}
+
+func TestEmptyResponsesAreErrors(t *testing.T) {
+	fake := &llmtest.Fake{Responses: [][]byte{[]byte(`{"company": "Northwind", "role": "", "seniority": "", "must_have": [], "nice_to_have": [], "keywords": [], "responsibilities": [], "matches": [], "gaps": [], "questions": []}`)}}
+	tl, _ := New(fake, loadProfile(t))
+	if _, err := tl.Analyze(context.Background(), testPosting); err == nil || !strings.Contains(err.Error(), "empty analysis") {
+		t.Errorf("want an empty-analysis error, got %v", err)
+	}
+
+	hollow := `{"headline": "", "summary": {"text": "", "sources": []}, "experience": [{"id": "__drop__", "brief": false, "bullets": []}], "projects": [], "skills": []}`
+	fake = &llmtest.Fake{Responses: [][]byte{[]byte(hollow), []byte(hollow)}}
+	tl, _ = New(fake, loadProfile(t))
+	_, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "empty resume") || len(fake.Requests) != 2 {
+		t.Errorf("want an empty-resume error after one plain retry, got %v after %d calls", err, len(fake.Requests))
+	}
+	if fake.Requests[1].Prompt != fake.Requests[0].Prompt {
+		t.Error("an empty response should be retried with the original prompt")
+	}
+
+	// One empty response followed by a good one recovers.
+	fake = &llmtest.Fake{Responses: [][]byte{[]byte(hollow), readFile(t, "testdata/draft.json"), readFile(t, "testdata/cover_letter.json")}}
+	tl, _ = New(fake, loadProfile(t))
+	if _, err := tl.Write(context.Background(), testPosting, &Analysis{}, nil); err != nil {
+		t.Errorf("want recovery after one empty response, got %v", err)
 	}
 }

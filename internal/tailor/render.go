@@ -24,46 +24,54 @@ func RenderResume(p *profile.Profile, d *Draft) string {
 		fmt.Fprintf(&b, "\n## Summary\n\n%s\n", d.Summary.Text)
 	}
 
+	// Projects go right after the summary unless the profile says
+	// otherwise: for technical roles they're often the strongest evidence.
+	projectsFirst := p.Preferences.ProjectsPosition != "after"
+	if projectsFirst {
+		renderProjects(&b, p, d)
+	}
+
 	roles := map[string]profile.Experience{}
 	for _, e := range p.Experience {
 		roles[e.ID] = e
 	}
-	if len(d.Experience) > 0 {
+	var full, brief []profile.Experience
+	drafts := map[string]RoleDraft{}
+	for _, rd := range d.Experience {
+		e, ok := roles[rd.ID]
+		if !ok {
+			continue
+		}
+		if rd.Brief {
+			brief = append(brief, e)
+		} else {
+			full = append(full, e)
+			drafts[e.ID] = rd
+		}
+	}
+	if len(full) > 0 {
 		b.WriteString("\n## Experience\n")
-		for _, rd := range d.Experience {
-			e, ok := roles[rd.ID]
-			if !ok {
-				continue
-			}
+		for _, e := range full {
 			fmt.Fprintf(&b, "\n### %s, %s\n\n", e.Title, e.Company)
 			when := monthRange(e.Start, e.End)
-			if e.Location != "" {
-				when = e.Location + " | " + when
+			if loc := ShortLocation(e.Location); loc != "" {
+				when = loc + " | " + when
 			}
 			fmt.Fprintf(&b, "%s\n\n", when)
-			for _, bl := range rd.Bullets {
+			for _, bl := range drafts[e.ID].Bullets {
 				fmt.Fprintf(&b, "- %s\n", bl.Text)
 			}
 		}
 	}
-
-	projects := map[string]profile.Project{}
-	for _, pr := range p.Projects {
-		projects[pr.ID] = pr
-	}
-	if len(d.Projects) > 0 {
-		b.WriteString("\n## Projects\n\n")
-		for _, pl := range d.Projects {
-			pr, ok := projects[pl.ID]
-			if !ok {
-				continue
-			}
-			name := "**" + pr.Name + "**"
-			if pr.URL != "" {
-				name = fmt.Sprintf("**[%s](%s)**", pr.Name, pr.URL)
-			}
-			fmt.Fprintf(&b, "- %s: %s\n", name, pl.Text)
+	if len(brief) > 0 {
+		b.WriteString("\n## Earlier experience\n\n")
+		for _, e := range brief {
+			fmt.Fprintf(&b, "- %s, %s (%s)\n", e.Title, e.Company, monthRange(e.Start, e.End))
 		}
+	}
+
+	if !projectsFirst {
+		renderProjects(&b, p, d)
 	}
 
 	if len(d.Skills) > 0 {
@@ -99,6 +107,76 @@ func RenderResume(p *profile.Profile, d *Draft) string {
 		}
 	}
 	return b.String()
+}
+
+func renderProjects(b *strings.Builder, p *profile.Profile, d *Draft) {
+	if len(d.Projects) == 0 {
+		return
+	}
+	projects := map[string]profile.Project{}
+	for _, pr := range p.Projects {
+		projects[pr.ID] = pr
+	}
+	b.WriteString("\n## Projects\n\n")
+	for _, pl := range d.Projects {
+		pr, ok := projects[pl.ID]
+		if !ok {
+			continue
+		}
+		name := "**" + pr.Name + "**"
+		if pr.URL != "" {
+			name = fmt.Sprintf("**[%s](%s)**", pr.Name, pr.URL)
+		}
+		fmt.Fprintf(b, "- %s: %s\n", name, stripName(pl.Text, pr.Name))
+	}
+}
+
+// stripName removes a leading "Name:" or "Name -" from a project's text,
+// since the name is already shown before it.
+func stripName(text, name string) string {
+	t := strings.TrimSpace(text)
+	if name == "" || len(t) < len(name) || !strings.EqualFold(t[:len(name)], name) {
+		return t
+	}
+	rest := strings.TrimLeft(t[len(name):], " :-–—,")
+	if rest == "" || rest == t[len(name):] {
+		return t // the name was just the first word of a sentence about it
+	}
+	return strings.ToUpper(rest[:1]) + rest[1:]
+}
+
+var usStates = map[string]string{
+	"alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA", "colorado": "CO",
+	"connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+	"illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
+	"maine": "ME", "maryland": "MD", "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+	"mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+	"new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+	"north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR", "pennsylvania": "PA",
+	"rhode island": "RI", "south carolina": "SC", "south dakota": "SD", "tennessee": "TN", "texas": "TX",
+	"utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
+	"wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC",
+}
+
+// ShortLocation normalizes US locations to "City, ST": "Post Falls, Idaho,
+// United States" becomes "Post Falls, ID". Anything else is left as is.
+func ShortLocation(loc string) string {
+	parts := strings.Split(loc, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	if n := len(parts); n > 1 {
+		switch strings.ToLower(parts[n-1]) {
+		case "united states", "united states of america", "usa", "us", "u.s.", "u.s.a.":
+			parts = parts[:n-1]
+		}
+	}
+	if n := len(parts); n > 1 {
+		if abbr, ok := usStates[strings.ToLower(parts[n-1])]; ok {
+			parts[n-1] = abbr
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // RenderCoverLetter returns the cover letter as Markdown, dated on.
@@ -143,7 +221,7 @@ func RenderSources(d *Draft) string {
 
 func contactLine(c profile.Contact) string {
 	parts := []string{}
-	for _, s := range []string{c.Email, c.Phone, c.Location} {
+	for _, s := range []string{c.Email, c.Phone, ShortLocation(c.Location)} {
 		if s != "" {
 			parts = append(parts, s)
 		}

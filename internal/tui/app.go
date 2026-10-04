@@ -309,7 +309,7 @@ func (m Model) startGenerate() (tea.Model, tea.Cmd) {
 	m.steps = []step{
 		{label: "Analyze the posting against your profile", state: stepRunning},
 		{label: "Questions"},
-		{label: "Write the resume and cover letter, and check every line against your profile"},
+		{label: "Write the resume, then the cover letter, checking every fact against your profile"},
 		{label: "Build the PDFs"},
 	}
 	if m.cfg.NoPDF {
@@ -477,6 +477,12 @@ func (m Model) finishGen(rejected *tailor.DraftError, pages int, pdfErr error) (
 	}
 	if strings.HasPrefix(a.Source, "http") {
 		m.banner = append(m.banner, "Apply at "+link(a.Source, accent.Render(clip(a.Source, m.innerWidth()-14))))
+	}
+	if a.Draft != nil && len(a.Draft.Warnings) > 0 {
+		m.banner = append(m.banner, "", faint.Render("Worth a look before sending (press e or l to edit):"))
+		for _, w := range a.Draft.Warnings {
+			m.banner = append(m.banner, faint.Render("  • "+w))
+		}
 	}
 	if pdfErr != nil {
 		m.bannerErr = true

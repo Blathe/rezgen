@@ -300,7 +300,7 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.key(tea.KeyEnter)
 	h.wantScreen(scrApp)
 	h.wantView("Press g to generate")
-	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json")
+	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json", "../tailor/testdata/cover_letter.json")
 	h.typeText("g")
 	h.wantScreen(scrQuestion)
 	h.wantView("Question 1 of 2", "2 requirements matched")
@@ -338,7 +338,7 @@ func TestAddGenerateRegenerateDelete(t *testing.T) {
 	h.wantScreen(scrApp)
 
 	// Regenerate replaces the documents.
-	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json")
+	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json", "../tailor/testdata/cover_letter.json")
 	h.typeText("g")
 	h.wantScreen(scrConfirm)
 	h.wantView("This replaces the current resume and cover letter")

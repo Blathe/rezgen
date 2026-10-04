@@ -65,7 +65,7 @@ func TestPreview(t *testing.T) {
 	snap("Generating", h)
 
 	// Done.
-	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json")
+	h.respond("../tailor/testdata/analysis.json", "../tailor/testdata/draft.json", "../tailor/testdata/cover_letter.json")
 	h.m.screen = scrApp
 	h.m.steps = nil
 	h.typeText("g")

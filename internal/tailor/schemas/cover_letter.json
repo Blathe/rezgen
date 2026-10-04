@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["greeting", "paragraphs", "closing"],
+  "properties": {
+    "greeting": {"type": "string"},
+    "paragraphs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "sources"],
+        "properties": {
+          "text": {"type": "string"},
+          "sources": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "IDs of the profile entries or answers behind the paragraph's facts about the candidate. Empty for a paragraph that makes no factual claim about the candidate."
+          }
+        }
+      }
+    },
+    "closing": {"type": "string", "description": "A sign-off such as Sincerely, without the name"}
+  }
+}
